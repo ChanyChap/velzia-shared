@@ -1,3 +1,9 @@
 node_modules/
 tsconfig.tsbuildinfo
 
+
+# Claude Code session locks (rama-por-sesion + colision detection)
+.claude/active-sessions/
+
+# Acceso directo local para new-claude-session.ps1
+Nueva sesión Claude (aislada).lnk
