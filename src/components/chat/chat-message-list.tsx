@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "../../lib/utils";
 
@@ -22,6 +22,7 @@ interface ChatMessageListProps {
   ) => void;
   onQuickComplete?: (messageId: string) => void;
   onCreateTaskFromMessage?: (message: ChatMessage) => void;
+  onEndThread?: (messageId: string) => void;
   highlightMessageId?: string | null;
   loadMore: () => void;
   hasMore: boolean;
@@ -94,6 +95,7 @@ export function ChatMessageList({
   onToggleTask,
   onQuickComplete,
   onCreateTaskFromMessage,
+  onEndThread,
   loadMore,
   hasMore,
   loading,
@@ -106,6 +108,37 @@ export function ChatMessageList({
   const prevMessageCountRef = useRef(messages.length);
   const isAtBottomRef = useRef(true);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Índice "mi respuesta por mensaje original": para cada mensaje del
+  // currentUser que tiene reply_to_id, guardamos el id del original →
+  // id de mi reply. Lo usa la burbuja para:
+  //   1) pintar el badge "Respondido" en el mensaje original recibido
+  //   2) hacer scroll a la respuesta cuando se pulsa el badge
+  //   3) ocultar "Marcar como hecho" si ya respondí
+  // Petición de Chany 18 may 2026.
+  const myReplyByOriginalId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of messages) {
+      if (m.sender_id === currentUserId && m.reply_to_id && !m.deleted_at) {
+        map.set(m.reply_to_id, m.id);
+      }
+    }
+    return map;
+  }, [messages, currentUserId]);
+
+  // Scroll suave al reply mío de un mensaje concreto. Si la lista lo ha
+  // descargado en chunk (no está en messageRefs todavía) hacemos best-effort.
+  const handleScrollToMyReply = useCallback((originalMessageId: string) => {
+    const replyId = myReplyByOriginalId.get(originalMessageId);
+    if (!replyId) return;
+    const el = messageRefs.current.get(replyId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("bg-yellow-100/60", "rounded-lg", "transition-colors", "duration-1000");
+    window.setTimeout(() => {
+      el.classList.remove("bg-yellow-100/60");
+    }, 1500);
+  }, [myReplyByOriginalId]);
 
   // Scroll to bottom on new messages (only if already at bottom)
   useEffect(() => {
@@ -224,8 +257,11 @@ export function ChatMessageList({
                 onToggleTask={onToggleTask}
                 onQuickComplete={onQuickComplete}
                 onCreateTaskFromMessage={onCreateTaskFromMessage}
+                onEndThread={onEndThread}
                 slaCountdown={slaCountdowns?.get(msg.id)}
                 isFirst={msg.id === messages[0]?.id}
+                myReplyId={myReplyByOriginalId.get(msg.id) || null}
+                onScrollToMyReply={handleScrollToMyReply}
               />
             </div>
           ))}

@@ -13,6 +13,7 @@ import {
   PlusCircle,
   ListTodo,
   CalendarPlus,
+  CircleSlash,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { Badge } from "../ui/badge";
@@ -50,6 +51,16 @@ interface ChatMessageBubbleProps {
   ) => void;
   onQuickComplete?: (messageId: string) => void;
   onCreateTaskFromMessage?: (message: ChatMessage) => void;
+  // Llamado al pulsar "Conversación terminada" — zanja el hilo entero para
+  // el usuario actual (el panel padre refresca la lista y cierra SLAs).
+  onEndThread?: (messageId: string) => void;
+  // Si el currentUser ya respondió a este mensaje, id del reply. La lista
+  // padre lo calcula del array completo de mensajes. La burbuja lo usa
+  // para mostrar el badge "Respondido" y para ocultar "Marcar como hecho".
+  myReplyId?: string | null;
+  // Hace scroll suave al reply mío cuando el usuario pulsa el badge
+  // "Respondido". La lista padre conoce los refs DOM.
+  onScrollToMyReply?: (originalMessageId: string) => void;
   slaCountdown?: SlaCountdownInfo;
   // Marca el primer mensaje renderizado del chat: la lista lo usa para
   // colocar los data-testid del qa_flow (msg-reply-icon-first, msg-read-
@@ -308,9 +319,13 @@ export function ChatMessageBubble({
   onToggleTask,
   onQuickComplete,
   onCreateTaskFromMessage,
+  onEndThread,
+  myReplyId,
+  onScrollToMyReply,
   slaCountdown,
   isFirst,
 }: ChatMessageBubbleProps) {
+  const iAlreadyReplied = !!myReplyId;
   const [showActions, setShowActions] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
@@ -363,6 +378,14 @@ export function ChatMessageBubble({
   const myMention = currentUserId
     ? taskMentions.find((mention) => mention.mentioned_user_id === currentUserId)
     : null;
+  // ¿Estoy yo entre las @ menciones de este mensaje? Cubre TODAS las
+  // menciones (con o sin task_status). Lo usa el filtro de "Marcar como
+  // hecho": solo el destinatario explícito puede marcar como hecho —
+  // no todo el equipo del proyecto que ve el mensaje pasando por el chat
+  // (Chany 18 may 2026: "No me debería permitir a mi marcar como hecho un
+  // mensaje dirigido a Florencia Cabuli. Solo a ella.").
+  const isMentionedToMe = !!currentUserId
+    && (message.mentions?.some((m) => m.mentioned_user_id === currentUserId) ?? false);
   const canClaimTask =
     !!currentUserId &&
     (message.priority === "urgente" || message.priority === "tarea") &&
@@ -515,16 +538,26 @@ export function ChatMessageBubble({
           )}
 
           {/* Message bubble */}
-          <div
-            className={cn(
-              "rounded-lg px-3 py-2 text-sm",
-              isOwn
-                ? "bg-blue-50 text-foreground"
-                : "bg-muted text-foreground",
-              isUrgent && "border-l-[3px] border-l-orange-400",
-              isTask && "border-l-[3px] border-l-blue-400"
-            )}
-          >
+          {/* SLA vencido: si el mensaje me menciona a mí (no es mío) y su SLA
+              está superado, pintamos fondo rojo muy translúcido + borde rojo
+              oscuro + parpadeo. Sobrescribe el bg-muted normal para que se
+              vea de un vistazo qué mensajes están "en rojo" sin tener que
+              mirar el badge lateral. */}
+          {(() => {
+            const slaOverdueForMe = !isOwn && !!slaCountdown?.isBreached;
+            return (
+              <div
+                className={cn(
+                  "rounded-lg px-3 py-2 text-sm",
+                  slaOverdueForMe
+                    ? "bg-red-500/15 border-2 border-red-800 animate-sla-blink text-foreground"
+                    : isOwn
+                      ? "bg-blue-50 text-foreground"
+                      : "bg-muted text-foreground",
+                  !slaOverdueForMe && isUrgent && "border-l-[3px] border-l-orange-400",
+                  !slaOverdueForMe && isTask && "border-l-[3px] border-l-blue-400"
+                )}
+              >
             {/* Reply quote */}
             {message.reply_to && (
               <div className="border-l-2 border-primary/40 pl-2 mb-1.5 text-xs text-muted-foreground">
@@ -710,8 +743,50 @@ export function ChatMessageBubble({
                 </button>
               </div>
             )}
-            {/* Quick complete button — visible for received urgente/tarea messages */}
-            {showTaskCard && !isOwn && onQuickComplete && (
+            {/* Badge "Respondido" — petición Chany 18 may 2026. Sale en
+                CUALQUIER mensaje que NO sea mío y al que yo ya le haya
+                contestado con un reply. Click → scroll suave a mi reply.
+                Si está visible, ocultamos "Marcar como hecho" y "Conv.
+                terminada" porque ya está despachado por reply. */}
+            {iAlreadyReplied && !isOwn && (
+              <div className="mt-1.5">
+                <button
+                  onClick={() =>
+                    onScrollToMyReply && onScrollToMyReply(message.id)
+                  }
+                  title="Ya respondiste a este mensaje. Haz click para ir a tu respuesta."
+                  className="inline-flex items-center gap-1 text-xs font-medium rounded-md px-2.5 py-1 transition-colors border text-green-700 bg-green-50 border-green-200 hover:bg-green-100"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Respondido
+                </button>
+              </div>
+            )}
+            {/* Botón "Conversación terminada" — petición Chany 18 may 2026.
+                Sale en cualquier mensaje que sea una respuesta (tiene reply_to)
+                y que YO he recibido y aún tiene SLA corriendo hacia mí. Cierra
+                de un click todas las mentions pendientes del hilo entero. NO
+                aparece si ya respondí con un reply — ese acto ya cierra el SLA. */}
+            {message.reply_to && !isOwn && hasSlaCountdown && !iAlreadyReplied && onEndThread && (
+              <div className="mt-1.5">
+                <button
+                  onClick={() => onEndThread(message.id)}
+                  title="Marcar este hilo como terminado para mí. Deja de correr el SLA."
+                  className="inline-flex items-center gap-1 text-xs font-medium rounded-md px-2.5 py-1 transition-colors border text-slate-700 bg-slate-50 border-slate-200 hover:bg-slate-100"
+                >
+                  <CircleSlash className="h-3.5 w-3.5" />
+                  Conversación terminada
+                </button>
+              </div>
+            )}
+            {/* Quick complete button — visible para los mensajes
+                urgente/tarea que ME DIRIGIERON A MÍ (isMentionedToMe).
+                NO aparece para quien solo está mirando el chat pero no es
+                destinatario — p.ej. Chany no debe poder marcar como hecho
+                un mensaje dirigido a Florencia Cabuli (Chany 18 may 2026).
+                Tampoco aparece si yo ya respondí con un reply explícito —
+                ese acto ya cierra la tarea. */}
+            {showTaskCard && !isOwn && isMentionedToMe && !iAlreadyReplied && onQuickComplete && (
               <div className="mt-1.5">
                 <button
                   onClick={() => onQuickComplete(message.id)}
@@ -731,7 +806,9 @@ export function ChatMessageBubble({
                 en el popover de <ReadAvatars> dentro del meta-row. Mantenemos
                 un solo punto de verdad para los lectores y la burbuja queda
                 visualmente más limpia (decisión sesión 20260512-163220). */}
-          </div>
+              </div>
+            );
+          })()}
 
           {/* Hover actions - right side for other's messages */}
           {!isOwn && showActions && (

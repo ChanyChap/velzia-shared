@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MessageCircle } from "lucide-react";
 import { useChatUnreadDigest } from "../../hooks/use-chat-unread-count";
 import { cn } from "../../lib/utils";
@@ -25,12 +26,39 @@ export function ChatBubbleButton({
   className,
   variant = "header",
 }: ChatBubbleButtonProps) {
-  const { count, slaBreached, whatsappCount } = useChatUnreadDigest();
+  const { count, slaBreached, whatsappCount, mentionsCount } = useChatUnreadDigest();
   const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
 
   const ariaLabel = `Abrir notificaciones de chat (${count} pendientes${
     whatsappCount > 0 ? `, ${whatsappCount} de WhatsApp` : ""
   }${slaBreached ? ", una con SLA superado" : ""})`;
+
+  // Auto-apertura del sheet al abrir RefoTask cuando el usuario tiene
+  // mensajes "Sin responder por mí". Solo en la variante 'header' (la del
+  // dashboard) y solo UNA vez por sesión de navegador para no ser ruidoso.
+  // Si el usuario ya está dentro del sheet o en /chat, no lo reabrimos.
+  // Petición de Chany 18 may 2026: que la modal salte en cuanto abre la app
+  // si tiene mensajes pendientes de responder.
+  useEffect(() => {
+    if (variant !== "header") return;
+    if (mentionsCount <= 0) return;
+    if (typeof window === "undefined") return;
+    const FLAG = "rt:auto-opened-unread-sheet";
+    if (window.sessionStorage.getItem(FLAG) === "1") return;
+    if (pathname?.startsWith("/chat")) return;
+    window.sessionStorage.setItem(FLAG, "1");
+    // Forzamos tab=unread en la URL antes de abrir para que ChatTabs lo
+    // lea del search param y caiga directamente en "Sin responder por mí".
+    const params = new URLSearchParams(search?.toString() || "");
+    if (params.get("tab") !== "unread") {
+      params.set("tab", "unread");
+      router.replace(`${pathname || ""}?${params.toString()}`, { scroll: false });
+    }
+    setOpen(true);
+  }, [variant, mentionsCount, pathname, search, router]);
 
   if (variant === "fab") {
     return (

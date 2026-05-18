@@ -52,6 +52,15 @@ export function ChatInput({
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Marca si ya se hizo (o se descartó) el auto-seed de "@" en el primer
+  // mount del composer con autoFocus. Sin esto, cuando el usuario responde
+  // y handleSend llama a onCancelReply(), el replyTo pasa de truthy a null
+  // y el useEffect se re-ejecuta sembrando "@" — bug reportado por Chany
+  // 18 may 2026 ("Cuando pincho en Responder y pulso Enter, me abre el @
+  // para mencionar"). Cada vez que el composer se desmonta y vuelve a
+  // montarse (p.ej. click "Nuevo mensaje") el ref se reinicia a false y
+  // el seed vuelve a aplicarse.
+  const didInitialSeedRef = useRef(false);
   const { toast } = useToast();
 
   // Auto-resize textarea
@@ -74,11 +83,16 @@ export function ChatInput({
   // ya es implícito por el reply_to, así que no auto-inyectamos nada.
   useEffect(() => {
     if (!autoFocus) return;
+    const isFirstRun = !didInitialSeedRef.current;
     const id = window.setTimeout(() => {
       const ta = textareaRef.current;
       if (!ta) return;
       ta.focus();
-      if (!replyTo && content.length === 0) {
+      // Solo sembramos "@" en la primera ejecución del effect tras el
+      // mount, y solo si el composer arrancó como "Nuevo mensaje" (sin
+      // replyTo) y vacío. Reactivaciones posteriores del effect (p.ej.
+      // replyTo cambia a null tras onCancelReply del envío) NO siembran.
+      if (isFirstRun && !replyTo && content.length === 0) {
         setContent("@");
         setMentionQuery("");
         setMentionPosition({ top: 40, left: 0 });
@@ -88,6 +102,7 @@ export function ChatInput({
           ta.setSelectionRange(1, 1);
         });
       }
+      didInitialSeedRef.current = true;
     }, 0);
     return () => window.clearTimeout(id);
     // Solo dependemos de autoFocus + replyTo: content cambia con cada tecla
@@ -100,6 +115,50 @@ export function ChatInput({
     const trimmed = content.trim();
     if (!trimmed && pendingFiles.length === 0) return;
     if (sending) return;
+
+    // Regla obligatoria (Chany 18 may 2026): en mensajes "nuevos" (sin
+    // reply_to) hay que dirigirse SIEMPRE a alguien. Si no se ha mencionado
+    // a una persona o a @equipo, bloqueamos el envío y mostramos el toast
+    // con el texto exacto que pidió Chany. En respuestas (replyTo) no se
+    // aplica: el destinatario ya es implícito porque estás respondiendo a
+    // alguien concreto.
+    if (!replyTo) {
+      const hasEquipoMention = /@equipo\b/i.test(trimmed);
+      const hasPersonMention = tenantMembers.some((m) => {
+        if (m.id === "__equipo__") return false;
+        const fullName = m.full_name?.trim();
+        if (!fullName) return false;
+        // Coincidencia exacta del @<nombre completo>. Se usa el mismo
+        // formato que inserta MentionAutocomplete (`@${full_name} `).
+        return trimmed.includes(`@${fullName}`);
+      });
+      if (!hasEquipoMention && !hasPersonMention) {
+        toast({
+          title: "Tienes que mencionar a alguien",
+          description:
+            "Para pedir algo tienes que hacerlo a una sola persona y para notificar algo a todo el mundo debes mencionar a @equipo.",
+          variant: "destructive",
+          duration: 8000,
+        });
+        // Sembrar el "@" para abrir el menú de menciones si no estuviera
+        // ya — facilita corregir sin pensar en sintaxis.
+        if (!trimmed.includes("@")) {
+          setContent(`${content}@`);
+          setMentionQuery("");
+          setMentionPosition({ top: 40, left: 0 });
+          window.requestAnimationFrame(() => {
+            const ta = textareaRef.current;
+            if (ta) {
+              ta.focus();
+              const pos = ta.value.length;
+              ta.setSelectionRange(pos, pos);
+            }
+          });
+        }
+        return;
+      }
+    }
+
     setSending(true);
 
     let attachments: ChatAttachment[] = [];
@@ -155,7 +214,7 @@ export function ChatInput({
     } finally {
       setSending(false);
     }
-  }, [content, pendingFiles, channelId, onSend, replyTo, onCancelReply, toast, sending, priority]);
+  }, [content, pendingFiles, channelId, onSend, replyTo, onCancelReply, toast, sending, priority, tenantMembers]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (mentionQuery !== null) return; // Let MentionAutocomplete handle it

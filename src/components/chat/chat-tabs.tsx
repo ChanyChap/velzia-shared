@@ -297,6 +297,11 @@ function UnreadTab() {
           setItems((prev) =>
             prev ? prev.filter((it) => it.mention_id !== mentionId) : prev
           );
+          // Forzar recálculo del badge global (header + pestañas) para
+          // que el contador baje al instante (Chany 18 may 2026).
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("chat:digest-refresh"));
+          }
         }
       } finally {
         setMarking(null);

@@ -114,7 +114,7 @@ export function ProjectChatPanel({
     () => messages.map((m) => ({ id: m.id, priority: m.priority, created_at: m.created_at })),
     [messages]
   );
-  const { countdowns: slaCountdowns } = useSlaCountdown(channelId, currentUserId, slaConfig, messageRefs);
+  const { countdowns: slaCountdowns, refetchMentions } = useSlaCountdown(channelId, currentUserId, slaConfig, messageRefs);
 
   // Fetch or create channel — soporta scope='project' (con projectId) o
   // scope='team' (con teamId). El endpoint POST /api/chat/channels recibe
@@ -493,6 +493,17 @@ export function ProjectChatPanel({
           }
         }
         setReplyTo(null);
+        // Forzar recálculo del badge global "Sin responder por mí" /
+        // "Sin responderme". Al hacer reply se cierran burst de mentions
+        // y se crea la auto-mention al sender original — el hook de la
+        // campana necesita verlo de inmediato (Chany 18 may 2026: "El
+        // badge de pendientes de responder por mi no se ha actualizado").
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("chat:digest-refresh"));
+        }
+        // Y refrescamos también las mentions pendientes del countdown
+        // local del chat (badges SLA en burbuja).
+        refetchMentions();
       } catch (err) {
         toast({
           title: "Error",
@@ -502,7 +513,7 @@ export function ProjectChatPanel({
         throw err; // Re-throw so ChatInput doesn't clear the content
       }
     },
-    [channelId, toast, currentUserId, tenantMembers, syncLatestMessages]
+    [channelId, toast, currentUserId, tenantMembers, syncLatestMessages, refetchMentions]
   );
 
   const handleClaimTask = useCallback(
@@ -635,6 +646,11 @@ export function ProjectChatPanel({
           )
         );
 
+        // El claim-task con autoComplete marca task_status=realizada y
+        // responded_at de la mention → el badge global debe refrescarse.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("chat:digest-refresh"));
+        }
         toast({
           title: mention.task_status === "realizada"
             ? "Marcado como hecho"
@@ -655,6 +671,38 @@ export function ProjectChatPanel({
     setTaskModalMessage(message);
     setTaskModalOpen(true);
   }, []);
+
+  // "Conversación terminada" — zanja el hilo entero para el usuario actual.
+  // El endpoint marca todas las mentions pendientes del hilo (subiendo a
+  // la raíz y bajando por descendientes) como respondidas. Refrescamos las
+  // mentions pendientes para que el SLA visual desaparezca de inmediato.
+  const handleEndThread = useCallback(
+    async (messageId: string) => {
+      try {
+        const res = await chatFetch(`/api/chat/messages/${messageId}/end-thread`,
+          { method: "POST" }
+        );
+        if (!res.ok) throw new Error("Error");
+        const data = await res.json();
+        refetchMentions();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("chat:digest-refresh"));
+        }
+        toast({
+          title: "Conversación cerrada",
+          description: data.closed_count
+            ? `Se han cerrado ${data.closed_count} avisos pendientes del hilo.`
+            : "Este hilo ya estaba al día.",
+        });
+      } catch {
+        toast({
+          title: "No se pudo cerrar la conversación",
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, refetchMentions]
+  );
 
   // Create team task from chat message
   const handleCreateTask = useCallback(async (data: {
@@ -887,6 +935,7 @@ export function ProjectChatPanel({
         onToggleTask={handleToggleTask}
         onQuickComplete={handleQuickComplete}
         onCreateTaskFromMessage={handleCreateTaskFromMessage}
+        onEndThread={handleEndThread}
         loadMore={loadMore}
         hasMore={hasMore}
         loading={loadingMore}

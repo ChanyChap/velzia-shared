@@ -171,6 +171,17 @@ export function useChatUnreadDigest(): ChatUnreadDigest {
 
     refresh();
 
+    // Evento custom global para forzar refresh inmediato del digest.
+    // Lo emiten los componentes que cambian team_chat_mentions a través
+    // del API (enviar mensaje con @, hacer reply, mark-as-responded,
+    // end-thread). Sin esto el badge tarda hasta 30s en actualizarse
+    // (poll) o depende del Realtime, que a veces no llega — bug
+    // reportado por Chany 18 may 2026.
+    const onCustomRefresh = () => {
+      if (!cancelled) refresh();
+    };
+    window.addEventListener("chat:digest-refresh", onCustomRefresh);
+
     // Nombre de canal único por instancia: dos componentes (topbar +
     // pestaña "Sin responder por mí") montan el hook a la vez y Supabase
     // rechaza añadir .on() tras .subscribe() si el nombre se reusa.
@@ -221,6 +232,7 @@ export function useChatUnreadDigest(): ChatUnreadDigest {
       clearInterval(pollInterval);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", onVisible);
+      window.removeEventListener("chat:digest-refresh", onCustomRefresh);
       supabase.removeChannel(channel);
     };
   }, []);
