@@ -8,6 +8,7 @@ import { useToast } from "../../hooks/use-toast";
 import { MentionAutocomplete } from "./mention-autocomplete";
 import { ChatDocumentDetectionAlert } from "./chat-document-detection-alert";
 import type { ChatMessage, TeamMember, ChatAttachment, DocumentDetection } from "./types";
+import { chatFetch } from "../../lib/chat-api-base";
 
 interface ChatInputProps {
   onSend: (
@@ -109,7 +110,7 @@ export function ChatInput({
         const formData = new FormData();
         pendingFiles.forEach((file) => formData.append("files", file));
 
-        const res = await fetch(`/api/chat/channels/${channelId}/upload`, {
+        const res = await chatFetch(`/api/chat/channels/${channelId}/upload`, {
           method: "POST",
           body: formData,
         });

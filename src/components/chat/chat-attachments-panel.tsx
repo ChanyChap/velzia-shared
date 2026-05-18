@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { X, Loader2, FileText, Image as ImageIcon, File, Download } from "lucide-react";
 import { Button } from "../ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
+import { chatFetch } from "../../lib/chat-api-base";
 
 interface AttachmentItem {
   name: string;
@@ -69,7 +70,7 @@ export function ChatAttachmentsPanel({ channelId, open, onOpenChange }: ChatAtta
   useEffect(() => {
     if (!open || !channelId) return;
     setLoading(true);
-    fetch(`/api/chat/channels/${channelId}/attachments`)
+    chatFetch(`/api/chat/channels/${channelId}/attachments`)
       .then((res) => (res.ok ? res.json() : { attachments: [] }))
       .then((data) => setAttachments(data.attachments || []))
       .catch(() => setAttachments([]))

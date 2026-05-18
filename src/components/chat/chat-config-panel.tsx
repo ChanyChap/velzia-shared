@@ -13,6 +13,7 @@ import { Label } from "../ui/label";
 import { Switch } from "../ui/switch";
 import { useToast } from "../../hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { chatFetch } from "../../lib/chat-api-base";
 
 interface ChatConfigPanelProps {
   open: boolean;
@@ -49,7 +50,7 @@ export function ChatConfigPanel({ open, onOpenChange }: ChatConfigPanelProps) {
     if (!open) return;
 
     setLoading(true);
-    fetch("/api/chat/sla")
+    chatFetch("/api/chat/sla")
       .then((res) => {
         if (!res.ok) throw new Error("Error al cargar configuración");
         return res.json();
@@ -67,7 +68,7 @@ export function ChatConfigPanel({ open, onOpenChange }: ChatConfigPanelProps) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/chat/sla", {
+      const res = await chatFetch("/api/chat/sla", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),

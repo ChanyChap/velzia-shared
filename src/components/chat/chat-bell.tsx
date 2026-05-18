@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { Button } from "../ui/button";
 import { MessageCircle, Loader2, CheckCheck } from "lucide-react";
 import { createClient } from "../../lib/supabase-client";
+import { chatFetch } from "../../lib/chat-api-base";
 
 interface ChatChannel {
   id: string;
@@ -58,7 +59,7 @@ export function ChatBell() {
 
   const fetchChannels = useCallback(async () => {
     try {
-      const res = await fetch("/api/chat/channels", { cache: "no-store" });
+      const res = await chatFetch("/api/chat/channels", { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
       const sorted = (data as ChatChannel[]).sort((a, b) => {
@@ -272,7 +273,7 @@ export function ChatBell() {
     // Mark as read BEFORE navigating — use keepalive so fetch survives page unload
     if (channel.unread_count > 0) {
       try {
-        await fetch(`/api/chat/channels/${channel.id}/read`, {
+        await chatFetch(`/api/chat/channels/${channel.id}/read`, {
           method: "POST",
           keepalive: true,
         });
@@ -303,7 +304,7 @@ export function ChatBell() {
     // Fire all mark-read requests in parallel
     await Promise.all(
       unreadChannels.map((c) =>
-        fetch(`/api/chat/channels/${c.id}/read`, { method: "POST", keepalive: true })
+        chatFetch(`/api/chat/channels/${c.id}/read`, { method: "POST", keepalive: true })
           .then((res) => { if (res.ok) broadcastRead(c.id); })
           .catch(() => {})
       )

@@ -15,6 +15,7 @@ import { ChatAttachmentsPanel } from "./chat-attachments-panel";
 import { ChatTipBanner } from "./chat-tip-banner";
 import { useSlaCountdown } from "./use-sla-countdown";
 import type { ChatMessage, TeamMember, ChatSlaConfig } from "./types";
+import { chatFetch } from "../../lib/chat-api-base";
 
 interface ProjectChatPanelProps {
   /** Requerido si scope='project'. Ignorado si scope='team'. */
@@ -95,7 +96,7 @@ export function ProjectChatPanel({
 
   // Fetch SLA config
   useEffect(() => {
-    fetch("/api/chat/sla")
+    chatFetch("/api/chat/sla")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) setSlaConfig({
@@ -129,7 +130,7 @@ export function ProjectChatPanel({
         return;
       }
       try {
-        const res = await fetch("/api/chat/channels", {
+        const res = await chatFetch("/api/chat/channels", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
@@ -164,8 +165,7 @@ export function ProjectChatPanel({
       try {
         const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
         if (before) params.set("before", before);
-        const res = await fetch(
-          `/api/chat/channels/${channelIdParam}/messages?${params}`
+        const res = await chatFetch(`/api/chat/channels/${channelIdParam}/messages?${params}`
         );
         if (!res.ok) throw new Error("Error al cargar mensajes");
         const data = await res.json();
@@ -198,8 +198,7 @@ export function ProjectChatPanel({
 
       try {
         const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
-        const res = await fetch(
-          `/api/chat/channels/${channelIdParam}/messages?${params}`
+        const res = await chatFetch(`/api/chat/channels/${channelIdParam}/messages?${params}`
         );
         if (!res.ok) throw new Error("Error al sincronizar mensajes");
         const data = await res.json();
@@ -329,7 +328,7 @@ export function ProjectChatPanel({
             return [...prev, msg];
           });
           // Auto mark-read since panel is open and user is viewing
-          fetch(`/api/chat/channels/${channelId}/read`, { method: "POST" })
+          chatFetch(`/api/chat/channels/${channelId}/read`, { method: "POST" })
             .then((res) => {
               if (res.ok) {
                 try {
@@ -412,7 +411,7 @@ export function ProjectChatPanel({
     if (!channelId || !currentUserId) return;
 
     const markRead = () => {
-      fetch(`/api/chat/channels/${channelId}/read`, {
+      chatFetch(`/api/chat/channels/${channelId}/read`, {
         method: "POST",
       })
         .then((res) => {
@@ -448,8 +447,7 @@ export function ProjectChatPanel({
       if (!channelId) return;
 
       try {
-        const res = await fetch(
-          `/api/chat/channels/${channelId}/messages`,
+        const res = await chatFetch(`/api/chat/channels/${channelId}/messages`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -510,7 +508,7 @@ export function ProjectChatPanel({
   const handleClaimTask = useCallback(
     async (messageId: string) => {
       try {
-        const res = await fetch(`/api/chat/messages/${messageId}/claim-task`, {
+        const res = await chatFetch(`/api/chat/messages/${messageId}/claim-task`, {
           method: "POST",
         });
         if (!res.ok) {
@@ -564,7 +562,7 @@ export function ProjectChatPanel({
     status: "pendiente" | "realizada"
   ) => {
     try {
-      const res = await fetch(`/api/chat/mentions/${mentionId}/complete-task`, {
+      const res = await chatFetch(`/api/chat/mentions/${mentionId}/complete-task`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -613,7 +611,7 @@ export function ProjectChatPanel({
   const handleQuickComplete = useCallback(
     async (messageId: string) => {
       try {
-        const res = await fetch(`/api/chat/messages/${messageId}/claim-task`, {
+        const res = await chatFetch(`/api/chat/messages/${messageId}/claim-task`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ autoComplete: true }),
@@ -724,8 +722,7 @@ export function ProjectChatPanel({
       if (!channelId) return;
 
       try {
-        const res = await fetch(
-          `/api/chat/channels/${channelId}/messages/${messageId}`,
+        const res = await chatFetch(`/api/chat/channels/${channelId}/messages/${messageId}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -768,8 +765,7 @@ export function ProjectChatPanel({
       if (!channelId) return;
 
       try {
-        const res = await fetch(
-          `/api/chat/channels/${channelId}/messages/${messageId}`,
+        const res = await chatFetch(`/api/chat/channels/${channelId}/messages/${messageId}`,
           { method: "DELETE" }
         );
         if (!res.ok) throw new Error("Error al eliminar mensaje");

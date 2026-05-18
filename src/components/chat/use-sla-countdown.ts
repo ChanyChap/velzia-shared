@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { PendingMention, ChatSlaConfig } from "./types";
+import { chatFetch } from "../../lib/chat-api-base";
 
 export interface SlaCountdownInfo {
   remainingSeconds: number;
@@ -34,7 +35,7 @@ export function useSlaCountdown(
   const fetchPendingMentions = useCallback(async () => {
     if (!channelId || !currentUserId || !slaConfig?.enabled) return;
     try {
-      const res = await fetch(`/api/chat/sla/pending-mentions?channel_id=${channelId}`);
+      const res = await chatFetch(`/api/chat/sla/pending-mentions?channel_id=${channelId}`);
       if (!res.ok) return;
       const data = await res.json();
       setPendingMentions(data.mentions || []);

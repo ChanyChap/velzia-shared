@@ -13,6 +13,7 @@ import { ProjectChatPanel } from "./project-chat-panel";
 import { cn } from "../../lib/utils";
 import { createClient } from "../../lib/supabase-client";
 import { useChatUnreadDigest } from "../../hooks/use-chat-unread-count";
+import { chatFetch } from "../../lib/chat-api-base";
 
 interface TeamSummary {
   id: string;
@@ -262,7 +263,7 @@ function UnreadTab() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/chat/unread-messages")
+    chatFetch("/api/chat/unread-messages")
       .then((r) => (r.ok ? r.json() : { messages: [] }))
       .then((d) => {
         if (!cancelled) setItems(d.messages || []);
@@ -287,7 +288,7 @@ function UnreadTab() {
       if (marking) return;
       setMarking(mentionId);
       try {
-        const res = await fetch(`/api/chat/mentions/${mentionId}/mark-responded`, {
+        const res = await chatFetch(`/api/chat/mentions/${mentionId}/mark-responded`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ reopen: false }),
@@ -473,7 +474,7 @@ function OutboundTab() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/chat/outbound-unread-messages")
+    chatFetch("/api/chat/outbound-unread-messages")
       .then((r) => (r.ok ? r.json() : { messages: [] }))
       .then((d) => {
         if (!cancelled) setItems(d.messages || []);
@@ -668,7 +669,7 @@ async function fetchUnreadByContext(): Promise<{
   const byProject = new Map<string, number>();
   const byTeam = new Map<string, number>();
   try {
-    const res = await fetch("/api/chat/unread-messages", { cache: "no-store" });
+    const res = await chatFetch("/api/chat/unread-messages", { cache: "no-store" });
     if (!res.ok) return { byProject, byTeam };
     const data = await res.json();
     const messages: Array<{
@@ -831,7 +832,7 @@ function TeamsTab({
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch("/api/chat/teams")
+      chatFetch("/api/chat/teams")
         .then((r) => (r.ok ? r.json() : { teams: [] }))
         .catch(() => ({ teams: [] })),
       fetchUnreadByContext(),

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "../lib/supabase-client";
+import { chatFetch } from "../lib/chat-api-base";
 
 const DEFAULT_SLA_NORMAL = 60;
 const DEFAULT_SLA_URGENTE = 15;
@@ -49,7 +50,7 @@ export function useChatUnreadDigest(): ChatUnreadDigest {
 
     async function fetchOutboundUnread(): Promise<number> {
       try {
-        const res = await fetch("/api/chat/outbound-unread-messages", {
+        const res = await chatFetch("/api/chat/outbound-unread-messages", {
           cache: "no-store",
         });
         if (!res.ok) return 0;
