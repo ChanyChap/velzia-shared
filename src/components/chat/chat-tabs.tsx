@@ -102,7 +102,14 @@ export function ChatTabs({
     <div className="flex flex-col h-full bg-background">
       <header className="sticky top-0 z-20 bg-background border-b px-3 pt-3 pb-2">
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-base font-semibold">Chat</h1>
+          <h1 className="text-base font-semibold flex items-baseline gap-2 truncate">
+            <span>Chat</span>
+            {tab === "proyecto" && activeProjectName && (
+              <span className="text-sm font-normal text-muted-foreground truncate">
+                · del proyecto {activeProjectName}
+              </span>
+            )}
+          </h1>
         </div>
         <div className="grid grid-cols-5 gap-1 bg-muted rounded-lg p-1">
           <TabButton
@@ -322,6 +329,11 @@ function UnreadTab() {
         params.set("team_id", m.team_id);
         params.delete("project_id");
       }
+      // reply=1 es la señal que lee ProjectChatPanel para auto-disparar
+      // el botón "Responder" sobre el mensaje del hash. Sin esta señal el
+      // panel solo hace scroll al mensaje y deja al usuario buscar el
+      // botón de reply manualmente (feedback Chany 19 may 2026).
+      params.set("reply", "1");
       router.replace(`${pathname}?${params.toString()}#msg-${m.id}`, {
         scroll: false,
       });
