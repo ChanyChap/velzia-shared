@@ -4,9 +4,6 @@ import { useEffect, useState } from "react";
 import { createClient } from "../lib/supabase-client";
 import { chatFetch } from "../lib/chat-api-base";
 
-const DEFAULT_SLA_NORMAL = 60;
-const DEFAULT_SLA_URGENTE = 15;
-
 export interface ChatUnreadDigest {
   count: number;
   slaBreached: boolean;
@@ -89,81 +86,39 @@ export function useChatUnreadDigest(): ChatUnreadDigest {
         fetchOutboundUnread(),
       ]);
 
-      const { data: slaCfg } = await supabase
-        .from("team_chat_sla_config")
-        .select("sla_minutes_normal, sla_minutes_urgente, enabled")
-        .eq("tenant_id", tenantId)
-        .single();
-
-      const slaEnabled = slaCfg?.enabled !== false;
-      const slaNormal = slaCfg?.sla_minutes_normal ?? DEFAULT_SLA_NORMAL;
-      const slaUrgente = slaCfg?.sla_minutes_urgente ?? DEFAULT_SLA_URGENTE;
-
-      const { data: mentions } = await supabase
-        .from("team_chat_mentions")
-        .select("id, message_id, priority")
-        .eq("tenant_id", tenantId)
-        .eq("mentioned_user_id", userId)
-        .is("responded_at", null);
-
-      if (!mentions || mentions.length === 0) {
-        if (!cancelled)
-          setDigest({
-            count: waCount,
-            slaBreached: false,
-            whatsappCount: waCount,
-            mentionsCount: 0,
-            outboundCount,
-          });
-        return;
-      }
-
-      // Necesitamos created_at de los mensajes para evaluar SLA. La mención
-      // tiene su propio created_at pero el SLA se mide contra el mensaje.
-      const messageIds = mentions.map((m) => m.message_id);
-      const { data: messages } = await supabase
-        .from("team_chat_messages")
-        .select("id, created_at, priority, deleted_at, sender_id")
-        .in("id", messageIds);
-
-      const msgMap = new Map<
-        string,
-        { created_at: string; priority: string | null; sender_id: string }
-      >();
-      (messages || [])
-        .filter((m) => !m.deleted_at && m.sender_id !== userId)
-        .forEach((m) =>
-          msgMap.set(m.id, {
-            created_at: m.created_at,
-            priority: m.priority,
-            sender_id: m.sender_id,
-          }),
-        );
-
-      let total = 0;
+      // FUENTE DE VERDAD UNIFICADA: el `mentionsCount` se calcula a partir
+      // del MISMO endpoint que consume la lista (`UnreadMessagesList` /
+      // pestaña "Sin responder por mí"), `/api/chat/unread-messages`.
+      // Antes este hook consultaba Supabase directamente y podía
+      // desincronizarse con la lista (badge "2" con lista vacía): el
+      // endpoint aplica filtros que el hook no replicaba (join con
+      // `team_chat_channels`, limit, exclusiones extra). Decisión Chany
+      // 2026-05-19 — bug reportado en VelziaOnSite.
+      let mentionsCount = 0;
       let anyBreached = false;
-      const now = Date.now();
-      for (const mention of mentions) {
-        const msg = msgMap.get(mention.message_id);
-        if (!msg) continue;
-        total += 1;
-        if (slaEnabled && !anyBreached) {
-          const priority = (
-            mention.priority ||
-            msg.priority ||
-            "normal"
-          ).toLowerCase();
-          const slaMin = priority === "urgente" ? slaUrgente : slaNormal;
-          const ageMin = (now - new Date(msg.created_at).getTime()) / 60000;
-          if (ageMin > slaMin) anyBreached = true;
+      try {
+        const res = await chatFetch("/api/chat/unread-messages", {
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            messages?: Array<{ sla_breached?: boolean }>;
+          };
+          const items = Array.isArray(data?.messages) ? data.messages : [];
+          mentionsCount = items.length;
+          anyBreached = items.some((m) => m?.sla_breached === true);
         }
+      } catch {
+        // Sin red: no actualizamos esa parte del digest. Realtime y los
+        // polls posteriores reintentarán.
       }
+
       if (!cancelled) {
         setDigest({
-          count: total + waCount,
+          count: mentionsCount + waCount,
           slaBreached: anyBreached,
           whatsappCount: waCount,
-          mentionsCount: total,
+          mentionsCount,
           outboundCount,
         });
       }
