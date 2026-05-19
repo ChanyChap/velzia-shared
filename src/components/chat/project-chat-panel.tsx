@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { createClient } from "../../lib/supabase-client";
 import { useToast } from "../../hooks/use-toast";
 import { Loader2, Settings, Search, Paperclip } from "lucide-react";
@@ -70,6 +71,45 @@ export function ProjectChatPanel({
   > | null>(null);
   const syncInFlightRef = useRef(false);
   const { toast } = useToast();
+
+  // Auto-trigger del botón Responder cuando se llega desde la pestaña
+  // "Sin responder por mí" (Chany 19 may 2026). El item de la bandeja
+  // navega con ?reply=1#msg-<id>. Cuando los mensajes están cargados
+  // localizamos el mensaje, abrimos el composer en modo Reply, hacemos
+  // scroll/highlight y limpiamos el query param para no repetir al
+  // refrescar (el hash se conserva para el scroll-restoration nativo).
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const autoReplyDoneRef = useRef(false);
+  useEffect(() => {
+    if (loading || messages.length === 0) return;
+    if (typeof window === "undefined") return;
+    if (autoReplyDoneRef.current) return;
+    if (searchParams.get("reply") !== "1") return;
+
+    const hash = window.location.hash;
+    if (!hash.startsWith("#msg-")) return;
+    const msgId = hash.slice("#msg-".length);
+    const msg = messages.find((m) => m.id === msgId);
+    if (!msg) return;
+
+    autoReplyDoneRef.current = true;
+    setReplyTo(msg);
+    setComposerOpen(true);
+    setComposerFocusToken((t) => t + 1);
+    setHighlightMessageId(msgId);
+    window.setTimeout(() => setHighlightMessageId(null), 3000);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("reply");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${pathname}${qs ? `?${qs}` : ""}${hash}`
+    );
+  }, [loading, messages, searchParams, pathname]);
 
   // Get current user + check admin role
   useEffect(() => {
