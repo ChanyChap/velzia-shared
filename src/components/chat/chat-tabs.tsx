@@ -73,6 +73,45 @@ export function ChatTabs({
 
   const selectedProjectId = projectIdFromUrl || activeProjectId || null;
 
+  // Nombre del proyecto activo. El caller (ChatNotificationsSheet) no
+  // siempre pasa activeProjectName — cuando el proyecto se elige desde
+  // dentro del panel vía ?project_id=, ChatTabs lo resuelve por su
+  // cuenta consultando la tabla `proyectos`. Así el header "Chat · del
+  // proyecto X" funciona igual montado como página o como Sheet flotante.
+  const [loadedProjectName, setLoadedProjectName] = useState<string | null>(
+    null
+  );
+  useEffect(() => {
+    if (activeProjectName || !selectedProjectId) {
+      setLoadedProjectName(null);
+      return;
+    }
+    let cancelled = false;
+    createClient()
+      .from("proyectos")
+      .select("name")
+      .eq("id", selectedProjectId)
+      .single()
+      .then(({ data }: { data: { name?: string } | null }) => {
+        if (!cancelled) setLoadedProjectName(data?.name ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, activeProjectName]);
+
+  const effectiveProjectName = activeProjectName || loadedProjectName;
+
+  // En refotask el nombre del proyecto es un link a su ficha. En las
+  // apps hermanas (Factorías / CAD / vz-logistica / VelziaOnSite) no
+  // existe esa ruta, así que el nombre se renderiza como texto plano.
+  const projectHref =
+    typeof window !== "undefined" &&
+    window.location.hostname.includes("refotask") &&
+    selectedProjectId
+      ? `/proyectos/${selectedProjectId}`
+      : null;
+
   const setQueryParam = useCallback(
     (key: string, value: string | null) => {
       const params = new URLSearchParams(search.toString());
@@ -104,9 +143,19 @@ export function ChatTabs({
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-base font-semibold flex items-baseline gap-2 truncate">
             <span>Chat</span>
-            {tab === "proyecto" && activeProjectName && (
+            {tab === "proyecto" && effectiveProjectName && (
               <span className="text-sm font-normal text-muted-foreground truncate">
-                · del proyecto {activeProjectName}
+                · del proyecto{" "}
+                {projectHref ? (
+                  <a
+                    href={projectHref}
+                    className="text-primary hover:underline"
+                  >
+                    {effectiveProjectName}
+                  </a>
+                ) : (
+                  effectiveProjectName
+                )}
               </span>
             )}
           </h1>
