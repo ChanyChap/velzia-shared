@@ -30,6 +30,26 @@ export type {
   ChatSlaConfig,
 } from "./components/chat/types";
 
+// ── Gantt / Cronograma compartido ────────────────────────────────────────
+// Componente único del cronograma editable (antes "TareasGanttView" de rt.sig).
+// La persistencia se inyecta mediante GanttDataPort; cada app (rt.sig, VelziaCAD)
+// mapea sus entidades a GanttTask/GanttGroup/GanttDep y provee el puerto.
+export { ScheduleGantt } from "./components/gantt/schedule-gantt";
+export type { ScheduleGanttProps } from "./components/gantt/schedule-gantt";
+export type {
+  GanttTask,
+  GanttGroup,
+  GanttDep,
+  GanttDependency,
+  GanttDataPort,
+  GanttBaselinePort,
+  BaselineSummary,
+  BaselineBar,
+  DependencyType,
+  TaskRow,
+  ViewMode,
+} from "./components/gantt/types";
+
 // ── Inicialización del cliente Supabase ──────────────────────────────────
 export { setSupabaseClientFactory } from "./lib/supabase-client";
 
@@ -110,3 +130,27 @@ export {
   SelectValue,
 } from "./components/ui/select";
 export { Toaster } from "./components/ui/toaster";
+export {
+  AlertDialog,
+  AlertDialogPortal,
+  AlertDialogOverlay,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "./components/ui/alert-dialog";
+export {
+  Command,
+  CommandDialog,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandShortcut,
+  CommandSeparator,
+} from "./components/ui/command";
