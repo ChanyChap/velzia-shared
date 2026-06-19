@@ -795,7 +795,7 @@ export function ScheduleGantt({
       const oldStart = parseISO(tarea.start_date);
       const oldEnd = tarea.end_date
         ? parseISO(tarea.end_date)
-        : addDays(oldStart, Math.max(1, tarea.duration_days || 1));
+        : addDays(oldStart, Math.max(1, Number(tarea.duration_days) || 1));
       const newStart = addDays(oldStart, daysDelta);
       const newEnd = addDays(oldEnd, daysDelta);
       const startISO = newStart.toISOString().slice(0, 10);
