@@ -232,10 +232,17 @@ export function ScheduleGantt({
   // detectar retrasos (debía haber empezado/terminado y no lo ha hecho).
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
+  // ¿Cronograma jerárquico (modo árbol)? Si alguna tarea trae parent_id, el CPM
+  // (camino crítico, duración total) corre SOLO sobre las actividades; los
+  // paquetes (resumen) y las tareas por elemento (hojas) no tienen dependencias
+  // y se excluirían como nodos aislados que falsearían la duración.
+  const hasHierarchy = useMemo(() => tareas.some(t => !!t.parent_id), [tareas]);
+
   // Convertir las tareas en formato que el CPM puede entender. Cada tarea es
   // un nodo con duración = (end - start) en días naturales.
   const cpm = useMemo(() => {
-    const acts: CpmActivity[] = tareas.map(t => {
+    const cpmSource = hasHierarchy ? tareas.filter(t => t.nivel === 'actividad') : tareas;
+    const acts: CpmActivity[] = cpmSource.map(t => {
       const start = t.start_date ? parseISO(t.start_date) : referenceDate;
       // Mismo fallback que en construcción de filas: end_date si existe, si no
       // calculado desde duration_days. Evita CPM con todos los nodos a duración 0
@@ -254,7 +261,7 @@ export function ScheduleGantt({
       lagDays: d.lag_days ?? 0,
     }));
     return computeCpm(acts, deps);
-  }, [tareas, dependencies, referenceDate]);
+  }, [tareas, dependencies, referenceDate, hasHierarchy]);
 
   // Construye las filas que ven TaskList y TimelineBody.
   // ===== Líneas base del PROYECTO (tabla project_baselines, mig 827) =====
@@ -388,9 +395,29 @@ export function ScheduleGantt({
     const allRows: TaskRow[] = [];
     const rowByTaskId = new Map<string, string>();
 
+    // ── Jerarquía EDT opcional (modo árbol) ──────────────────────────────
+    // Si alguna tarea trae parent_id, construimos un árbol (paquete → actividad
+    // → tarea); si ninguna lo trae (RefoTask), todo queda plano (depth 0). El
+    // orden vertical ya es DFS porque el generador asigna sort_order recorriendo
+    // el árbol. Precomputamos hijos (para hasChildren / bloquear arrastre de los
+    // resúmenes).
+    const childCount = new Map<string, number>();
+    let hasHierarchy = false;
+    for (const t of flat) {
+      if (t.parent_id) {
+        hasHierarchy = true;
+        childCount.set(t.parent_id, (childCount.get(t.parent_id) ?? 0) + 1);
+      }
+    }
+    const nivelToKind = (n: unknown): TaskRow['kind'] =>
+      n === 'paquete' ? 'wp' : n === 'tarea' ? 'task' : 'activity';
+    const nivelToDepth = (n: unknown): number =>
+      n === 'paquete' ? 0 : n === 'actividad' ? 1 : n === 'tarea' ? 2 : 0;
+
     for (const t of flat) {
       const rowId = toRowId('activity', t.id);
       rowByTaskId.set(t.id, rowId);
+      const childrenOfThis = childCount.get(t.id) ?? 0;
       const start = t.start_date ? parseISO(t.start_date) : referenceDate;
       // Fallback en cascada: si no hay end_date, usar duration_days; si tampoco hay, asumir 1 día.
       // Importante: el endpoint /api/proyectos/[id]/import-edt guarda duration_days pero no end_date,
@@ -450,10 +477,10 @@ export function ScheduleGantt({
 
       allRows.push({
         id: rowId,
-        kind: 'activity',
+        kind: hasHierarchy ? nivelToKind(t.nivel) : 'activity',
         name: displayName,
-        depth: 0,
-        parentRowId: null,
+        depth: hasHierarchy ? nivelToDepth(t.nivel) : 0,
+        parentRowId: t.parent_id ? toRowId('activity', t.parent_id) : null,
         startDate: start,
         days: daysReal,
         // HITO solo por flag explícito de la tarea. Antes se infería con
@@ -464,16 +491,18 @@ export function ScheduleGantt({
         isCritical: cpm.criticalActivityIds.has(t.id),
         isCollapsedRollup: false,
         isHidden: false,
-        // wpId = estancia: lo usa el reorden para limitar el arrastre a la misma
-        // estancia, aunque ya no haya filas de paquete/estancia visibles.
-        wpId: t.estancia_id || '__none__',
+        // wpId limita el arrastre de reorden al mismo grupo. En modo árbol = el
+        // padre (solo se reordena entre hermanos); en plano = la estancia.
+        wpId: hasHierarchy ? (t.parent_id || '__root__') : (t.estancia_id || '__none__'),
         activityId: t.id,
-        hasChildren: false,
-        // Drag-and-drop por día: cualquier tarea con start_date y duración >0
+        // hasChildren = nodo resumen (paquete o actividad con tareas). Los
+        // resúmenes no se arrastran/redimensionan: sus fechas derivan de los hijos.
+        hasChildren: childrenOfThis > 0,
+        // Drag-and-drop por día: cualquier tarea HOJA con start_date y duración >0
         // puede arrastrarse horizontalmente para cambiar de día. El move se
         // persiste en onMoveCommit (más abajo) manteniendo la duración.
-        draggable: canEdit && !!t.start_date && daysReal > 0,
-        resizable: canEdit,
+        draggable: canEdit && !!t.start_date && daysReal > 0 && childrenOfThis === 0,
+        resizable: canEdit && childrenOfThis === 0,
         // Progreso ajustado al estado (controla el split claro/oscuro de la barra).
         progress: stateProgress,
         // Estado de ejecución (color verde/rojo) + datos para el KPI/modal.
@@ -622,7 +651,18 @@ export function ScheduleGantt({
   // recursos asignados en las filas de actividad (= tarea del proyecto, su
   // activityId es el id de la tarea).
   const displayedRows = useMemo(() => {
+    // Colapso del árbol: una fila se oculta si algún ancestro está colapsado.
+    const parentByRow = new Map<string, string | null>(rows.map(r => [r.id, r.parentRowId]));
+    const hasCollapsedAncestor = (r: TaskRow): boolean => {
+      let p = r.parentRowId;
+      while (p) {
+        if (collapsed.has(p)) return true;
+        p = parentByRow.get(p) ?? null;
+      }
+      return false;
+    };
     const filtered = rows.filter(r => {
+      if (hasCollapsedAncestor(r)) return false;
       if (r.kind === 'wp') return true; // WPs siempre visibles para mantener jerarquía
       if (hideMilestones && r.isMilestone) return false;
       if (r.activityId) {
@@ -645,7 +685,7 @@ export function ScheduleGantt({
       if (subtitle === r.subtitle) return r;
       return { ...r, subtitle };
     });
-  }, [rows, hideMilestones, excludedStatuses, onlyAssignedToMe, taskById, assigneesByTask, currentUserId]);
+  }, [rows, hideMilestones, excludedStatuses, onlyAssignedToMe, taskById, assigneesByTask, currentUserId, collapsed]);
 
   const activeFilterCount =
     excludedStatuses.size +

@@ -150,6 +150,12 @@ export interface GanttTask {
   estancia_id?: string | null;
   assigned_user_ids?: string[] | null;
   start_date_fixed?: boolean | null;
+  // Jerarquía EDT opcional (modo árbol). Si `parent_id` está presente en alguna
+  // tarea, el Gantt construye un árbol (paquete → actividad → tarea) en vez de
+  // la lista plana. `nivel` mapea a la profundidad/estilo de fila. Ausentes en
+  // RefoTask → lista plana (compatibilidad hacia atrás).
+  parent_id?: string | null;
+  nivel?: 'paquete' | 'actividad' | 'tarea' | string | null;
 }
 
 export interface GanttGroup {
