@@ -32,7 +32,7 @@ import { useRowDrag } from './use-row-drag';
 import { useZoomPersistence } from './use-zoom-persistence';
 import { computeCpm, type CpmActivity, type CpmDependency } from './cpm-engine';
 import { propagateTaskDates } from './propagate-task-dates';
-import { LEFT_PANEL_WIDTH } from './constants';
+import { LEFT_PANEL_WIDTH, ANCHOR_DATE } from './constants';
 import { useResizableColumn } from './use-resizable-column';
 import { formatDurationShort } from './format-duration';
 import { useToast } from '../../hooks/use-toast';
@@ -87,6 +87,13 @@ export interface ScheduleGanttProps {
   // Abre la configuración de calendario laboral/festivos (específico de cada
   // app). Si no se provee, el botón de calendario de la toolbar no se muestra.
   onOpenCalendar?: () => void;
+  // Jornada laboral para posicionar tareas SUB-DÍA (con hora) en el grid. Cuando
+  // una tarea trae `start_date` con hora (ISO con "T"), su X se calcula con la
+  // fracción de jornada transcurrida: inicio = workdayStartHour, longitud =
+  // workdayHours. Las tareas SIN hora (todas las de RefoTask) ignoran esto y se
+  // posicionan por día como siempre (retrocompatible). Defaults: 8:00 y 8h.
+  workdayStartHour?: number;
+  workdayHours?: number;
 }
 
 // Encuentra el día más temprano entre todas las tareas. Si no hay fechas,
@@ -146,6 +153,8 @@ export function ScheduleGantt({
   onOpenTask,
   onDepsChanged,
   onOpenCalendar,
+  workdayStartHour = 8,
+  workdayHours = 8,
 }: ScheduleGanttProps) {
   const { toast } = useToast();
   // Zoom horizontal + vertical persistidos por scope 'project:<projectId>'
@@ -475,6 +484,18 @@ export function ScheduleGantt({
           ? (realProgress > 0 && realProgress < 100 ? realProgress : 50)
           : 0;
 
+      // Posición SUB-DÍA: si la tarea trae HORA (start_date ISO con "T"),
+      // calculamos su offset fraccionario desde el ancla para que la barra
+      // arranque a la hora real dentro de la jornada (workdayStartHour..+Hours).
+      // Sin hora → undefined → posición por día (retrocompatible, RefoTask).
+      let startOffsetDays: number | undefined;
+      if (t.start_date && t.start_date.includes('T')) {
+        const minutesOfDay = start.getHours() * 60 + start.getMinutes();
+        const dayMin = Math.max(1, workdayHours) * 60;
+        const frac = Math.min(1, Math.max(0, (minutesOfDay - workdayStartHour * 60) / dayMin));
+        startOffsetDays = differenceInCalendarDays(start, ANCHOR_DATE) + frac;
+      }
+
       allRows.push({
         id: rowId,
         kind: hasHierarchy ? nivelToKind(t.nivel) : 'activity',
@@ -482,6 +503,7 @@ export function ScheduleGantt({
         depth: hasHierarchy ? nivelToDepth(t.nivel) : 0,
         parentRowId: t.parent_id ? toRowId('activity', t.parent_id) : null,
         startDate: start,
+        startOffsetDays,
         days: daysReal,
         // HITO solo por flag explícito de la tarea. Antes se infería con
         // daysReal===0, pero una tarea de 1h tiene start y end el MISMO día
