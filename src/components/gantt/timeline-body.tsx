@@ -86,6 +86,8 @@ interface TimelineBodyProps {
   // día + zoom alto) y los tooltips de barra muestran la hora real. Sin él, el
   // body se comporta exactamente como antes (degradación elegante).
   calendar?: WorkingCalendar | null;
+  // Marcadores verticales (p.ej. fechas contractuales): línea + etiqueta opcional.
+  markers?: Array<{ date: Date; label?: string; color?: string }>;
   // Scroll vertical actual del contenedor. Se usa para "fijar" la cabecera de
   // fechas: el grupo del header se traslada en Y por scrollTop para quedar
   // siempre pegado al borde superior visible aunque se haga scroll hacia abajo.
@@ -119,6 +121,7 @@ function TimelineBodyImpl({
   onContextMenuRow,
   animateAllBars = false,
   calendar,
+  markers = [],
   scrollTop = 0,
 }: TimelineBodyProps) {
   const { totalWidth, totalHeight, xOf, barRectFor, totalDays, startDate, pxPerDay, rowHeight: ROW_HEIGHT } = layout;
@@ -512,6 +515,21 @@ function TimelineBodyImpl({
             pointerEvents="none"
           />
         )}
+
+        {/* Marcadores verticales (fechas contractuales): línea + etiqueta arriba. */}
+        {markers.map((m, i) => {
+          const mx = xOf(m.date);
+          if (mx < 0 || mx > totalWidth) return null;
+          const color = m.color || '#9333ea';
+          return (
+            <g key={`marker-${i}`} pointerEvents="none">
+              <line x1={mx} x2={mx} y1={0} y2={totalHeight} stroke={color} strokeWidth={1.5} strokeDasharray="2 2" />
+              {m.label && (
+                <text x={mx + 3} y={11 + scrollTop} fontSize={9} fill={color} fontWeight={600}>{m.label}</text>
+              )}
+            </g>
+          );
+        })}
 
         {/* Banda de rango total en filas WP (rollup azul claro) */}
         {wpRangeBars.map(b => (

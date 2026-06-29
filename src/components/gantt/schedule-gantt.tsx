@@ -100,6 +100,8 @@ export interface ScheduleGanttProps {
   // grid no muestra rejilla horaria (comportamiento clásico, RefoTask). Constrúyelo
   // con buildWorkingCalendar (exportado por el paquete).
   calendar?: WorkingCalendar | null;
+  // Marcadores verticales en el grid (p.ej. fechas contractuales): línea + etiqueta.
+  markers?: Array<{ date: Date; label?: string; color?: string }>;
 }
 
 // Encuentra el día más temprano entre todas las tareas. Si no hay fechas,
@@ -162,6 +164,7 @@ export function ScheduleGantt({
   workdayStartHour = 8,
   workdayHours = 8,
   calendar,
+  markers,
 }: ScheduleGanttProps) {
   const { toast } = useToast();
   // Zoom horizontal + vertical persistidos por scope 'project:<projectId>'
@@ -1472,6 +1475,7 @@ export function ScheduleGantt({
             animateAllBars={tasksRecentlyAnimated.size > 0}
             scrollTop={scrollTop}
             calendar={calendar ?? undefined}
+            markers={markers}
           />
           <DepEditModal
             open={!!editingDep}
