@@ -33,6 +33,7 @@ import { useZoomPersistence } from './use-zoom-persistence';
 import { computeCpm, type CpmActivity, type CpmDependency } from './cpm-engine';
 import { propagateTaskDates } from './propagate-task-dates';
 import { LEFT_PANEL_WIDTH, ANCHOR_DATE } from './constants';
+import type { WorkingCalendar } from './working-calendar';
 import { useResizableColumn } from './use-resizable-column';
 import { formatDurationShort } from './format-duration';
 import { useToast } from '../../hooks/use-toast';
@@ -94,6 +95,11 @@ export interface ScheduleGanttProps {
   // posicionan por día como siempre (retrocompatible). Defaults: 8:00 y 8h.
   workdayStartHour?: number;
   workdayHours?: number;
+  // Calendario laboral (jornada + festivos) para dibujar las SUB-LÍNEAS de hora y
+  // las bandas de días no laborables en el grid. Opcional: si no se provee, el
+  // grid no muestra rejilla horaria (comportamiento clásico, RefoTask). Constrúyelo
+  // con buildWorkingCalendar (exportado por el paquete).
+  calendar?: WorkingCalendar | null;
 }
 
 // Encuentra el día más temprano entre todas las tareas. Si no hay fechas,
@@ -155,6 +161,7 @@ export function ScheduleGantt({
   onOpenCalendar,
   workdayStartHour = 8,
   workdayHours = 8,
+  calendar,
 }: ScheduleGanttProps) {
   const { toast } = useToast();
   // Zoom horizontal + vertical persistidos por scope 'project:<projectId>'
@@ -1464,6 +1471,7 @@ export function ScheduleGantt({
             onMoveStart={drag.beginMove}
             animateAllBars={tasksRecentlyAnimated.size > 0}
             scrollTop={scrollTop}
+            calendar={calendar ?? undefined}
           />
           <DepEditModal
             open={!!editingDep}

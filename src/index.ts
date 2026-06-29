@@ -49,6 +49,14 @@ export type {
   TaskRow,
   ViewMode,
 } from "./components/gantt/types";
+// Calendario laboral del Gantt: para construir el WorkingCalendar (jornada +
+// festivos) que activa las sub-líneas de hora y las bandas de no-laborables.
+export { buildWorkingCalendar } from "./components/gantt/working-calendar";
+export type {
+  WorkingCalendar,
+  WorkingCalendarRaw,
+  RawWorkScheduleDay,
+} from "./components/gantt/working-calendar";
 
 // ── Inicialización del cliente Supabase ──────────────────────────────────
 export { setSupabaseClientFactory } from "./lib/supabase-client";
