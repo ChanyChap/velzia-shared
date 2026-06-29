@@ -796,6 +796,23 @@ export function ScheduleGantt({
       if (!row.activityId) return;
       const tarea = tareas.find(t => t.id === row.activityId);
       if (!tarea?.start_date) return;
+      // SUB-DÍA: redimensionar cambia la DURACIÓN en horas (mismo inicio); la fecha
+      // no cambia. Emite datetime; la app persiste fecha+hora.
+      if (row.startOffsetDays != null) {
+        const s = parseISO(tarea.start_date);
+        const wdStartMin = workdayStartHour * 60;
+        const wdMin = Math.max(60, workdayHours * 60);
+        const curMin = tarea.start_date.includes('T') ? s.getHours() * 60 + s.getMinutes() : wdStartMin;
+        const durMin = Math.max(15, Math.min(wdMin, Math.round(newDays * wdMin)));
+        const dayStr = tarea.start_date.slice(0, 10);
+        const fmt = (min: number) => { const h = Math.floor(min / 60); const m = Math.round(min - h * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+        const sISO = `${dayStr}T${fmt(curMin)}:00`;
+        const eISO = `${dayStr}T${fmt(Math.min(curMin + durMin, wdStartMin + wdMin))}:00`;
+        setOptimisticDates(prev => new Map(prev).set(row.activityId!, { start: sISO, end: eISO }));
+        try { await onResizeTask(row.activityId, sISO, eISO); }
+        catch (err) { setOptimisticDates(prev => { const n = new Map(prev); n.delete(row.activityId!); return n; }); toast({ title: 'No se pudo guardar la duración', description: describeSupabaseError(err), variant: 'destructive' }); }
+        return;
+      }
       const start = parseISO(tarea.start_date);
       const end = addDays(start, Math.max(1, Math.round(newDays)));
       // Mantener formato YYYY-MM-DD para start/end.
@@ -861,9 +878,28 @@ export function ScheduleGantt({
   // Sin predecesora se mueve directo.
   const onMoveCommit = useCallback(
     async (row: TaskRow, daysDelta: number) => {
-      if (!row.activityId || daysDelta === 0) return;
+      if (!row.activityId || Math.abs(daysDelta) < 1e-9) return;
       const tarea = tareas.find(t => t.id === row.activityId);
       if (!tarea?.start_date) return;
+      // SUB-DÍA: arrastrar ajusta la HORA dentro de la jornada (misma fecha,
+      // clamp al horario). Emite datetime con "T"; la app persiste fecha+hora.
+      if (row.startOffsetDays != null) {
+        const s = parseISO(tarea.start_date);
+        const wdStartMin = workdayStartHour * 60;
+        const wdMin = Math.max(60, workdayHours * 60);
+        const durMin = Math.max(0, (Number(tarea.duration_days) || 0) * wdMin);
+        const curMin = s.getHours() * 60 + s.getMinutes();
+        const shiftMin = Math.round(daysDelta * wdMin);
+        const newStartMin = Math.min(Math.max(wdStartMin, curMin + shiftMin), wdStartMin + wdMin - durMin);
+        const dayStr = tarea.start_date.slice(0, 10);
+        const fmt = (min: number) => { const h = Math.floor(min / 60); const m = Math.round(min - h * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+        const startISO = `${dayStr}T${fmt(newStartMin)}:00`;
+        const endISO = `${dayStr}T${fmt(newStartMin + durMin)}:00`;
+        await applyMoveDates(row.activityId, startISO, endISO);
+        return;
+      }
+      const dDelta = Math.round(daysDelta);
+      if (dDelta === 0) return;
       const oldStart = parseISO(tarea.start_date);
       const oldEnd = tarea.end_date
         ? parseISO(tarea.end_date)
@@ -887,6 +923,7 @@ export function ScheduleGantt({
     pxPerDay: layout.pxPerDay,
     rows,
     canEdit,
+    workdayHours,
     onResizeCommit,
     onMoveCommit,
   });
