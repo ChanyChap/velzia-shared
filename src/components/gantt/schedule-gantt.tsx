@@ -510,6 +510,7 @@ export function ScheduleGantt({
         id: rowId,
         kind: hasHierarchy ? nivelToKind(t.nivel) : 'activity',
         name: displayName,
+        tooltip: t.tooltip ?? null,
         depth: hasHierarchy ? nivelToDepth(t.nivel) : 0,
         parentRowId: t.parent_id ? toRowId('activity', t.parent_id) : null,
         startDate: start,

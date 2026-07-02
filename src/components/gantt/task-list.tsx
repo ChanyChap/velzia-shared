@@ -474,7 +474,7 @@ function TaskListImpl({
                       textTransform: row.kind === 'wp' ? 'uppercase' : 'none',
                       letterSpacing: row.kind === 'wp' ? 0.3 : 0,
                     }}
-                    title={row.name}
+                    title={row.tooltip || row.name}
                   >
                     {row.name}
                   </span>

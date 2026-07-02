@@ -96,6 +96,9 @@ export interface TaskRow {
   rawActivity?: unknown;
   rawWp?: unknown;
 
+  // Tooltip nativo (title) de la fila — lo propaga la app consumidora vía GanttTask.
+  tooltip?: string | null;
+
   // Marcado de "accesoria": una actividad subordinada a una PRINCIPAL del mismo
   // paquete. Lo calcula use-gantt-data (plantilla EDT).
   isAccessory?: boolean;
@@ -156,6 +159,10 @@ export interface GanttTask {
   // RefoTask → lista plana (compatibilidad hacia atrás).
   parent_id?: string | null;
   nivel?: 'paquete' | 'actividad' | 'tarea' | string | null;
+  // Tooltip opcional (title nativo) que se muestra al pasar el ratón por la fila.
+  // La app consumidora lo rellena con lo que quiera (p.ej. VelziaCAD: el desglose
+  // del cálculo de la duración). Ausente → sin tooltip (retrocompat).
+  tooltip?: string | null;
 }
 
 export interface GanttGroup {
