@@ -79,6 +79,10 @@ export interface TaskRow {
   // claro, empezada → claro+oscuro, terminada → oscuro) o ROJO (retrasos). El
   // retraso SIEMPRE manda sobre el estado base.
   executionState?: 'no_empezada' | 'empezada' | 'terminada' | 'retraso_inicio' | 'retraso_fin';
+  // Color EXPLÍCITO de la barra (hex) resuelto por la app consumidora a partir del
+  // estado de la tarea + su configuración de colores (VelziaCAD: estados por
+  // compuertas lógicas). Si está presente, MANDA sobre executionState/crítica/tipo.
+  barColor?: string;
   // Fechas planificadas REALES. Se usan para el KPI/modal de "actividades
   // retrasadas": cuándo debía empezar y cuándo debía terminar.
   plannedStartDate?: Date;
@@ -163,6 +167,9 @@ export interface GanttTask {
   // La app consumidora lo rellena con lo que quiera (p.ej. VelziaCAD: el desglose
   // del cálculo de la duración). Ausente → sin tooltip (retrocompat).
   tooltip?: string | null;
+  // Color explícito de la barra (hex). La app lo resuelve del estado + su config de
+  // colores. Ausente → color por defecto del componente (retrocompat).
+  barColor?: string | null;
 }
 
 export interface GanttGroup {

@@ -6,7 +6,7 @@
 // (tabla `tareas`) que tienen `start_date` y `end_date` persistidos.
 // Drag-resize del borde derecho persiste end_date (cambia duración real).
 
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEventHandler } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEventHandler, type MouseEvent as ReactMouseEvent } from 'react';
 import { addDays, differenceInCalendarDays, parseISO, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { TaskList } from './task-list';
@@ -82,6 +82,9 @@ export interface ScheduleGanttProps {
   onResizeTask: (taskId: string, newStartISO: string, newEndISO: string) => Promise<void>;
   onSelectTask: (taskId: string) => void;
   onOpenTask: (taskId: string) => void;
+  // Clic DERECHO sobre la barra de una tarea → la app pinta su menú de estado.
+  // Recibe el id de la tarea (activityId) y el evento (para clientX/clientY).
+  onBarContextMenu?: (taskId: string, event: ReactMouseEvent) => void;
   // Callback opcional para que la página recargue tareas+deps tras un
   // create/edit/delete de dependencia desde el propio Gantt.
   onDepsChanged?: () => void;
@@ -159,6 +162,7 @@ export function ScheduleGantt({
   onResizeTask,
   onSelectTask,
   onOpenTask,
+  onBarContextMenu,
   onDepsChanged,
   onOpenCalendar,
   workdayStartHour = 8,
@@ -540,6 +544,8 @@ export function ScheduleGantt({
         progress: stateProgress,
         // Estado de ejecución (color verde/rojo) + datos para el KPI/modal.
         executionState,
+        // Color explícito por estado (VelziaCAD): si la app lo pasa, manda sobre todo.
+        barColor: t.barColor ?? undefined,
         plannedStartDate,
         plannedEndDate,
         delayReason,
@@ -790,6 +796,16 @@ export function ScheduleGantt({
       if (row?.activityId) onOpenTask(row.activityId);
     },
     [rows, onOpenTask],
+  );
+
+  // Clic derecho sobre una barra → convierte rowId a activityId y avisa a la app.
+  const handleBarContextMenu = useCallback(
+    (rowId: string, e: ReactMouseEvent) => {
+      if (!onBarContextMenu) return;
+      const row = rows.find(r => r.id === rowId);
+      if (row?.activityId) onBarContextMenu(row.activityId, e);
+    },
+    [rows, onBarContextMenu],
   );
 
   const onResizeCommit = useCallback(
@@ -1508,6 +1524,7 @@ export function ScheduleGantt({
             onHoverRow={setHoverRowId}
             onSelect={(rowId, e) => handleRowClick(rowId, e)}
             onOpen={handleOpen}
+            onBarContextMenu={onBarContextMenu ? handleBarContextMenu : undefined}
             onResizeStart={drag.beginResize}
             onMoveStart={drag.beginMove}
             animateAllBars={tasksRecentlyAnimated.size > 0}

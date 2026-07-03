@@ -25,6 +25,8 @@ interface GanttBarProps {
   dim?: boolean;
   onClick: (rowId: string, event: ReactMouseEvent) => void;
   onDoubleClick: (rowId: string) => void;
+  // Clic DERECHO sobre la cápsula (VelziaCAD: menú de estado de la tarea). Opcional.
+  onBarContextMenu?: (rowId: string, event: ReactMouseEvent) => void;
   onResizeStart: (rowId: string, event: ReactPointerEvent) => void;
   onMoveStart: (rowId: string, event: ReactPointerEvent) => void;
   onBeginDepDrag?: (rowId: string, activityId: string, side: BarSide, event: ReactPointerEvent) => void;
@@ -57,6 +59,13 @@ interface GanttBarProps {
 }
 
 function colorForRow(row: TaskRow): { fill: string; light: string; stroke: string } {
+  // Color EXPLÍCITO por estado (VelziaCAD: estados por compuertas configurables).
+  // La app resuelve el hex del estado + su config y lo pasa en row.barColor. Manda
+  // sobre todo lo demás → la barra adopta un color sólido de ese estado.
+  if (row.barColor) {
+    return { fill: row.barColor, light: row.barColor, stroke: row.barColor };
+  }
+
   // light = tono "parte pendiente" (fondo). fill = tono "parte completada"
   // (capa superior limitada al % de progreso). Para crítica/pre-activity/task
   // usamos derivados claros del color principal.
@@ -95,6 +104,7 @@ function GanttBarImpl({
   dim = false,
   onClick,
   onDoubleClick,
+  onBarContextMenu,
   onResizeStart,
   onMoveStart,
   onBeginDepDrag,
@@ -120,6 +130,17 @@ function GanttBarImpl({
       onDoubleClick(row.id);
     },
     [onDoubleClick, row.id],
+  );
+
+  // Clic derecho sobre la cápsula → la app pinta su menú (estado de la tarea).
+  const handleContextMenu = useCallback(
+    (e: ReactMouseEvent) => {
+      if (!onBarContextMenu) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onBarContextMenu(row.id, e);
+    },
+    [onBarContextMenu, row.id],
   );
 
   const handleMoveDown = useCallback(
@@ -413,6 +434,7 @@ function GanttBarImpl({
     <g
       onClick={handleClick}
       onDoubleClick={handleDouble}
+      onContextMenu={handleContextMenu}
       opacity={dim ? 0.3 : row.isCollapsedRollup ? 0.7 : taskOpacity}
     >
       <title>{tooltipText}</title>
