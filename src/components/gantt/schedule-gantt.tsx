@@ -540,12 +540,15 @@ export function ScheduleGantt({
         // persiste en onMoveCommit (más abajo) manteniendo la duración.
         draggable: canEdit && !!t.start_date && daysReal > 0 && childrenOfThis === 0,
         resizable: canEdit && childrenOfThis === 0,
-        // Progreso ajustado al estado (controla el split claro/oscuro de la barra).
-        progress: stateProgress,
+        // Progreso: si la app lo provee (VelziaCAD: % de la compuerta del estado),
+        // manda; si no, el ajustado al estado del compartido (split claro/oscuro).
+        progress: typeof t.progress === 'number' ? t.progress : stateProgress,
         // Estado de ejecución (color verde/rojo) + datos para el KPI/modal.
         executionState,
         // Color explícito por estado (VelziaCAD): si la app lo pasa, manda sobre todo.
         barColor: t.barColor ?? undefined,
+        // Insignia de estado (punto + etiqueta) en la fila del panel izquierdo.
+        statusBadge: t.statusBadge ?? undefined,
         plannedStartDate,
         plannedEndDate,
         delayReason,

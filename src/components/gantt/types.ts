@@ -83,6 +83,9 @@ export interface TaskRow {
   // estado de la tarea + su configuración de colores (VelziaCAD: estados por
   // compuertas lógicas). Si está presente, MANDA sobre executionState/crítica/tipo.
   barColor?: string;
+  // Insignia de estado (punto de color + etiqueta) que se pinta en la fila del panel
+  // izquierdo, junto al nombre. La app la rellena con el estado actual de la tarea.
+  statusBadge?: { label: string; color: string };
   // Fechas planificadas REALES. Se usan para el KPI/modal de "actividades
   // retrasadas": cuándo debía empezar y cuándo debía terminar.
   plannedStartDate?: Date;
@@ -170,6 +173,8 @@ export interface GanttTask {
   // Color explícito de la barra (hex). La app lo resuelve del estado + su config de
   // colores. Ausente → color por defecto del componente (retrocompat).
   barColor?: string | null;
+  // Insignia de estado (punto + etiqueta) para la fila. La app la resuelve del estado.
+  statusBadge?: { label: string; color: string } | null;
 }
 
 export interface GanttGroup {

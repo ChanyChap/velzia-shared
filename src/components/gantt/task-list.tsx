@@ -478,6 +478,21 @@ function TaskListImpl({
                   >
                     {row.name}
                   </span>
+                  {/* Insignia de estado (VelziaCAD): punto de color + etiqueta corta. */}
+                  {row.statusBadge && (
+                    <span
+                      title={row.statusBadge.label}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+                        fontSize: 10, lineHeight: '14px', padding: '0 6px', borderRadius: 999,
+                        background: `${row.statusBadge.color}1a`, border: `1px solid ${row.statusBadge.color}66`,
+                        color: '#334155', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <span style={{ width: 7, height: 7, borderRadius: 999, background: row.statusBadge.color, flexShrink: 0 }} />
+                      {row.statusBadge.label}
+                    </span>
+                  )}
                   {/* Pills de empresa(s) asignada(s) — solo Gantt de proyecto.
                       Color por empresa + nombre corto; tooltip con el nombre
                       completo. Si no hay empresa, no se pinta nada. */}

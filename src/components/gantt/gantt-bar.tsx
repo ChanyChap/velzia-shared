@@ -58,12 +58,25 @@ interface GanttBarProps {
   rightLinePad?: number;
 }
 
+// Aclara un hex hacia el blanco (amt 0..1). Se usa para el FONDO de la barra con
+// color por estado, de modo que el % de progreso (compuerta) se vea como relleno
+// parcial en el color sólido sobre un tono claro del mismo color.
+function lighten(hex: string, amt: number): string {
+  const h = hex.replace('#', '');
+  if (h.length < 6) return hex;
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amt);
+  const to2 = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${to2(mix(r))}${to2(mix(g))}${to2(mix(b))}`;
+}
+
 function colorForRow(row: TaskRow): { fill: string; light: string; stroke: string } {
   // Color EXPLÍCITO por estado (VelziaCAD: estados por compuertas configurables).
   // La app resuelve el hex del estado + su config y lo pasa en row.barColor. Manda
-  // sobre todo lo demás → la barra adopta un color sólido de ese estado.
+  // sobre todo lo demás. fill = color del estado (parte "completada" según el %);
+  // light = tono claro del MISMO color (fondo), para que el % rellene parcialmente.
   if (row.barColor) {
-    return { fill: row.barColor, light: row.barColor, stroke: row.barColor };
+    return { fill: row.barColor, light: lighten(row.barColor, 0.72), stroke: row.barColor };
   }
 
   // light = tono "parte pendiente" (fondo). fill = tono "parte completada"
