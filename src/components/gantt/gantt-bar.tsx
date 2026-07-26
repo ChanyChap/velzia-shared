@@ -70,6 +70,20 @@ function lighten(hex: string, amt: number): string {
   return `#${to2(mix(r))}${to2(mix(g))}${to2(mix(b))}`;
 }
 
+// Devuelve el color de texto legible (blanco o gris muy oscuro) sobre un fondo
+// hex dado, según su luminancia relativa (WCAG). Se usa para la etiqueta de
+// duración dentro de la cápsula: el fondo cambia a lo largo de la barra (tono
+// claro en la parte pendiente, color sólido en la parte ya completada), así que
+// el texto NO puede tener un color fijo.
+function contrastText(hex: string): string {
+  const h = hex.replace('#', '');
+  if (h.length < 6) return '#1f2937';
+  const srgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  const lin = srgb.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const luminance = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  return luminance > 0.5 ? '#1f2937' : '#ffffff';
+}
+
 function colorForRow(row: TaskRow): { fill: string; light: string; stroke: string } {
   // Color EXPLÍCITO por estado (VelziaCAD: estados por compuertas configurables).
   // La app resuelve el hex del estado + su config y lo pasa en row.barColor. Manda
@@ -462,6 +476,24 @@ function GanttBarImpl({
             ry={radius}
           />
         </clipPath>
+        {/* Mitades izquierda/derecha del corte del progreso: sirven para partir
+            la etiqueta de duración en dos textos con colores distintos cuando el
+            borde del progreso cae justo encima de ella. */}
+        {useProgressLayer && (
+          <>
+            <clipPath id={`${clipId}-done`}>
+              <rect x={0} y={y} width={Math.max(0, progressWidth)} height={taskBarHeight + taskBarOffset * 2} />
+            </clipPath>
+            <clipPath id={`${clipId}-todo`}>
+              <rect
+                x={Math.max(0, progressWidth)}
+                y={y}
+                width={Math.max(0, rect.width - progressWidth)}
+                height={taskBarHeight + taskBarOffset * 2}
+              />
+            </clipPath>
+          </>
+        )}
       </defs>
       {/* Capa 1: fondo (parte pendiente, color claro). Si no hay tracking de
           progreso, se usa el color principal directamente. */}
@@ -535,25 +567,42 @@ function GanttBarImpl({
           style={widthTransitionStyle}
         />
       )}
-      {/* Duración (ej. "5d") centrada DENTRO de la barra. Color que contrasta:
-          si la barra usa la doble capa (claro+oscuro), el texto va oscuro;
-          si va plana en color principal (EDT plantilla), texto blanco. */}
-      {showDurationInside && (
-        <text
-          x={rect.width / 2}
-          y={y + taskBarOffset + taskBarHeight / 2}
-          fill={useProgressLayer ? stroke : COLORS.barText}
-          fontSize={10}
-          fontFamily="ui-sans-serif, system-ui, sans-serif"
-          fontWeight={600}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          pointerEvents="none"
-          style={{ userSelect: 'none' }}
-        >
-          {durationLabel}
-        </text>
-      )}
+      {/* Duración (ej. "5d") centrada DENTRO de la barra. El texto se pinta DOS
+          veces, cada una recortada a un tramo de la cápsula, con el color que
+          contrasta con lo que hay debajo: sobre el relleno de progreso (color
+          sólido) y sobre el fondo pendiente (tono claro). Antes usaba `stroke`,
+          que con `barColor` explícito es EL MISMO hex que el relleno → cuando el
+          progreso llegaba a la etiqueta, el texto desaparecía (Chany 26 jul). */}
+      {showDurationInside && (() => {
+        const textProps = {
+          x: rect.width / 2,
+          y: y + taskBarOffset + taskBarHeight / 2,
+          fontSize: 10,
+          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+          fontWeight: 600,
+          textAnchor: 'middle' as const,
+          dominantBaseline: 'middle' as const,
+          pointerEvents: 'none' as const,
+          style: { userSelect: 'none' as const },
+        };
+        if (!useProgressLayer) {
+          return <text {...textProps} fill={COLORS.barText}>{durationLabel}</text>;
+        }
+        return (
+          <>
+            {progressWidth > 0 && (
+              <text {...textProps} fill={contrastText(fill)} clipPath={`url(#${clipId}-done)`}>
+                {durationLabel}
+              </text>
+            )}
+            {progressWidth < rect.width && (
+              <text {...textProps} fill={contrastText(light)} clipPath={`url(#${clipId}-todo)`}>
+                {durationLabel}
+              </text>
+            )}
+          </>
+        );
+      })()}
       {/* Nombre de la actividad FUERA, a la derecha de la barra. Espacio
           generoso (14px) para que la cápsula respire y no se pegue al texto.
           Si hay subtítulo, subimos el nombre 5px para dejar sitio debajo. */}
