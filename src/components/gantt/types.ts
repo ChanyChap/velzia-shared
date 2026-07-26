@@ -202,6 +202,12 @@ export interface BaselineSummary {
 export interface BaselineBar {
   activityId: string;
   startDate: Date;
+  // Offset FRACCIONARIO en días desde ANCHOR_DATE, igual que TaskRow.startOffsetDays.
+  // Presente cuando la línea base congeló la HORA de inicio; manda sobre startDate
+  // para la X, de modo que la barra queda exactamente bajo la de la tarea real.
+  startOffsetDays?: number;
+  // Duración en días FRACCIONARIOS (misma aritmética que TaskRow.days): una tarea
+  // de 1h es 0,125 d. Redondearla a días enteros ensanchaba la línea base.
   days: number;
   isMilestone: boolean;
 }

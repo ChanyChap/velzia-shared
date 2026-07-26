@@ -6,12 +6,11 @@ import { ANCHOR_DATE } from './constants';
 import { computeCpm, type CpmActivity, type CpmDependency } from './cpm-engine';
 import type { BaselineRecord, BaselineSnapshot } from './use-baselines';
 
-export interface BaselineBar {
-  activityId: string;
-  startDate: Date;
-  days: number;
-  isMilestone: boolean;
-}
+// El tipo canónico vive en types.ts (lo consume también schedule-gantt). Aquí
+// solo se re-exporta: había una copia duplicada y timeline-body importaba ESTA,
+// así que los campos nuevos del canónico no le llegaban (Chany 26 jul).
+import type { BaselineBar } from './types';
+export type { BaselineBar };
 
 interface UseBaselineRenderInput {
   baselineId: string | null;

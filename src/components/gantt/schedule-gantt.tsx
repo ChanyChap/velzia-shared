@@ -352,15 +352,37 @@ export function ScheduleGantt({
         for (const t of tasks) {
           if (!t.start_date) continue;
           const start = parseISO(t.start_date);
-          const end = t.end_date ? parseISO(t.end_date) : addDays(start, Math.max(0.5, t.duration_days || 1));
-          const days = Math.max(0, differenceInCalendarDays(end, start));
+          // MISMA aritmética que las filas reales (ver más abajo, construcción de
+          // allRows): duración fraccionaria por rango y, si la línea base congeló
+          // la hora, offset sub-día. Antes se redondeaba a días-calendario y se
+          // ignoraba la hora → la barra salía más ancha y desplazada a la
+          // izquierda de la tarea, en vez de justo debajo (Chany 26 jul).
+          const rangeDays = t.end_date
+            ? (parseISO(t.end_date).getTime() - start.getTime()) / 86400000
+            : 0;
+          const durDays = Number(t.duration_days);
+          const durValid = Number.isFinite(durDays) && durDays > 0;
+          const days = rangeDays > 0 ? rangeDays : (durValid ? durDays : 1);
+          let startOffsetDays: number | undefined;
+          if (t.start_date.includes('T')) {
+            const minutesOfDay = start.getHours() * 60 + start.getMinutes();
+            const dayMin = Math.max(1, workdayHours) * 60;
+            const frac = Math.min(1, Math.max(0, (minutesOfDay - workdayStartHour * 60) / dayMin));
+            startOffsetDays = differenceInCalendarDays(start, ANCHOR_DATE) + frac;
+          }
           // HITO solo por flag explícito (baseline): una tarea sub-día no es hito.
-          map.set(t.tarea_id, { activityId: t.tarea_id, startDate: start, days, isMilestone: !!t.is_milestone });
+          map.set(t.tarea_id, {
+            activityId: t.tarea_id,
+            startDate: start,
+            startOffsetDays,
+            days,
+            isMilestone: !!t.is_milestone,
+          });
         }
         setBaselineBars(map);
       } catch { setBaselineBars(new Map()); }
     },
-    [port],
+    [port, workdayHours, workdayStartHour],
   );
 
   // Reorden OPTIMISTA: el nuevo sort_order se aplica en local al instante, sin

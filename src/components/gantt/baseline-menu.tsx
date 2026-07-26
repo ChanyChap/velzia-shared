@@ -42,6 +42,16 @@ export function BaselineMenu({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Nombre propuesto al abrir la modal: PMC0 (Plan Maestro de Control inicial) y,
+  // si ese nombre ya está cogido, el primer índice libre — así guardar varias
+  // versiones seguidas no obliga a inventarse un nombre ni choca con el anterior.
+  const suggestedName = () => {
+    const taken = new Set(baselines.map(b => b.name.trim().toUpperCase()));
+    let i = 0;
+    while (taken.has(`PMC${i}`)) i += 1;
+    return `PMC${i}`;
+  };
+
   const handleCreate = async () => {
     if (name.trim().length === 0) {
       toast({ title: 'Pon un nombre a la línea base', variant: 'destructive' });
@@ -164,6 +174,7 @@ export function BaselineMenu({
             <DropdownMenuItem
               onClick={() => {
                 setOpen(false);
+                setName(suggestedName());
                 setCreateOpen(true);
               }}
               className="text-xs"

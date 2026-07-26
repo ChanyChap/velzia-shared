@@ -554,11 +554,21 @@ function TimelineBodyImpl({
           if (row.kind === 'wp' || !row.activityId) return null;
           const b = baselineBars.get(row.activityId);
           if (!b) return null;
-          const baseRect = barRectFor(idx, b.startDate, Math.max(b.isMilestone ? 0 : b.days, b.isMilestone ? 0 : 1));
-          const baseY = baseRect.y + BAR_HEIGHT + 2;
+          // MISMA geometría que la cápsula real (ver barLayouts): duración
+          // fraccionaria sin forzar 1 día, y X por startOffsetDays cuando la
+          // línea base congeló la hora. Así la barra queda JUSTO DEBAJO de la
+          // actividad y no ligeramente atrasada (Chany 26 jul).
+          let baseRect = barRectFor(idx, b.startDate, b.isMilestone ? 0 : b.days);
+          if (b.startOffsetDays != null) {
+            baseRect = { ...baseRect, x: xOf(layout.anchor) + b.startOffsetDays * pxPerDay };
+          }
+          // Justo debajo de la cápsula real, usando su alto REAL (varía con el
+          // zoom vertical), no la constante de diseño.
+          const baseY = baseRect.y + baseRect.height + 2;
           const baseH = 6;
           if (b.isMilestone) {
-            const cx = baseRect.x + baseH;
+            // Mismo centro que el rombo real: media altura de cápsula desde su X.
+            const cx = baseRect.x + baseRect.height / 2;
             const cy = baseY + baseH / 2;
             return (
               <polygon
