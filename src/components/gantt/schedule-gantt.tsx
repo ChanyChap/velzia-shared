@@ -21,7 +21,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '../ui/dialog';
-import { AlertTriangle, CheckCircle2, Clock, ArrowDownToLine, ChevronsUp, ChevronsDown } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, ArrowDownToLine, ChevronsUp, ChevronsDown, Settings2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { MoveBelowDialog } from './move-below-dialog';
 import { useGanttLayout } from './use-gantt-layout';
@@ -85,6 +85,16 @@ export interface ScheduleGanttProps {
   // Clic DERECHO sobre la barra de una tarea → la app pinta su menú de estado.
   // Recibe el id de la tarea (activityId) y el evento (para clientX/clientY).
   onBarContextMenu?: (taskId: string, event: ReactMouseEvent) => void;
+  // Si se pasa, el menú contextual de la ESTRUCTURA EDT (clic derecho sobre una
+  // fila) añade arriba una entrada "Propiedades de actividad" que llama aquí con
+  // el id de la tarea. Sirve para abrir el mismo modal que el doble click, sin
+  // que la app tenga que interceptar el contextmenu del árbol.
+  onOpenTaskProperties?: (taskId: string) => void;
+  // Columna extra al final de cada fila del árbol, indexada por id de tarea.
+  // VelziaCAD la usa para el RESPONSABLE (proveedor/persona o aviso si falta).
+  rowMeta?: Map<string, { label: string; tone?: 'ok' | 'warn' | 'muted' }>;
+  rowMetaHeader?: string;
+  rowMetaWidth?: number;
   // Callback opcional para que la página recargue tareas+deps tras un
   // create/edit/delete de dependencia desde el propio Gantt.
   onDepsChanged?: () => void;
@@ -163,6 +173,10 @@ export function ScheduleGantt({
   onSelectTask,
   onOpenTask,
   onBarContextMenu,
+  onOpenTaskProperties,
+  rowMeta,
+  rowMetaHeader,
+  rowMetaWidth,
   onDepsChanged,
   onOpenCalendar,
   workdayStartHour = 8,
@@ -596,7 +610,9 @@ export function ScheduleGantt({
   const [showDelayedModal, setShowDelayedModal] = useState(false);
 
   // Menú contextual de la estructura EDT (clic derecho) + diálogo "Poner debajo de…".
-  const [ctxMenu, setCtxMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
+  // `taskId` = id de la tarea de la fila (cualquier nivel). `canReorder` marca si
+  // además admite las acciones de reorden (solo filas de tipo 'activity').
+  const [ctxMenu, setCtxMenu] = useState<{ taskId: string; canReorder: boolean; x: number; y: number } | null>(null);
   const [moveBelowSources, setMoveBelowSources] = useState<string[]>([]);
 
   // Mueve la tarea `sourceId` JUSTO debajo de `targetId` reordenando sort_order.
@@ -1492,8 +1508,13 @@ export function ScheduleGantt({
           rowDragState={rowDrag.state}
           onContextMenuRow={canEdit ? (rowId, x, y) => {
             const r = rows.find(rr => rr.id === rowId);
-            if (r?.kind === 'activity' && r.activityId) setCtxMenu({ taskId: r.activityId, x, y });
+            // El menú se abre en CUALQUIER fila (para "Propiedades"); las
+            // acciones de reorden solo tienen sentido en las actividades.
+            if (r?.activityId) setCtxMenu({ taskId: r.activityId, canReorder: r.kind === 'activity', x, y });
           } : undefined}
+          rowMeta={rowMeta}
+          rowMetaHeader={rowMetaHeader}
+          rowMetaWidth={rowMetaWidth}
           width={panelWidth}
           panelCollapsed={panelCollapsed}
           onToggleCollapsed={() => setPanelCollapsed(v => !v)}
@@ -1677,7 +1698,19 @@ export function ScheduleGantt({
             onContextMenu={e => { e.preventDefault(); setCtxMenu(null); }}
           />
           <div className="fixed z-50 w-56 rounded-md border bg-white py-1 shadow-lg text-sm" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
-            {(() => {
+            {onOpenTaskProperties && (
+              <>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 hover:bg-slate-100"
+                  onClick={() => { const id = ctxMenu.taskId; setCtxMenu(null); onOpenTaskProperties(id); }}
+                >
+                  <Settings2 className="h-3.5 w-3.5" /> Propiedades de actividad
+                </button>
+                {ctxMenu.canReorder && <div className="my-1 border-t" />}
+              </>
+            )}
+            {ctxMenu.canReorder && (() => {
               const ids = ctxTaskSourceIds(ctxMenu.taskId);
               const suffix = ids.length > 1 ? ` (${ids.length})` : '';
               return (

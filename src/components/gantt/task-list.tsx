@@ -24,6 +24,15 @@ interface TaskListProps {
   // proyecto). Genérico: si no se pasa, no se pinta nada (el Gantt de plantilla
   // no lo usa). Cada pill lleva su color para distinguir empresas de un vistazo.
   rowBadges?: Map<string, { label: string; color: string }[]>;
+  // COLUMNA extra al final de la fila, indexada por `row.activityId` (el id de
+  // la tarea de la app). Genérico: el Gantt de proyecto de VelziaCAD la usa para
+  // el RESPONSABLE (proveedor o interno) con aviso cuando falta. Si no se pasa,
+  // la columna no existe (el Gantt de plantilla no la usa).
+  rowMeta?: Map<string, { label: string; tone?: 'ok' | 'warn' | 'muted' }>;
+  // Título de esa columna en la cabecera. Sin él, la cabecera solo dice "Estructura EDT".
+  rowMetaHeader?: string;
+  // Ancho en px de la columna extra (default 130).
+  rowMetaWidth?: number;
   onRowDragHandleDown?: (rowId: string, event: ReactPointerEvent) => void;
   // Doble click sobre el asa (6 puntos): abre el diálogo "ubicar debajo de…".
   onGripDoubleClick?: (rowId: string) => void;
@@ -107,6 +116,9 @@ function TaskListImpl({
   canEdit,
   matchedRowIds,
   rowBadges,
+  rowMeta,
+  rowMetaHeader,
+  rowMetaWidth,
   onRowDragHandleDown,
   onGripDoubleClick,
   rowDragState,
@@ -119,6 +131,7 @@ function TaskListImpl({
 }: TaskListProps) {
   const ROW_HEIGHT = rowHeight ?? DEFAULT_ROW_HEIGHT;
   const panelWidth = width ?? LEFT_PANEL_WIDTH;
+  const metaWidth = rowMetaWidth ?? 130;
   const [edit, setEdit] = useState<EditState | null>(null);
   const editingRow = edit ? rows.find(r => r.id === edit.rowId) : null;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -228,6 +241,20 @@ function TaskListImpl({
         }}
       >
         <span style={{ flex: 1 }}>Estructura EDT</span>
+        {rowMeta && rowMetaHeader && (
+          <span
+            style={{
+              width: metaWidth,
+              flexShrink: 0,
+              fontSize: 11,
+              fontWeight: 600,
+              color: COLORS.textMuted,
+              textAlign: 'left',
+            }}
+          >
+            {rowMetaHeader}
+          </span>
+        )}
         {onToggleCollapsed && (
           <button
             type="button"
@@ -620,6 +647,31 @@ function TaskListImpl({
                   -{row.leadDays ?? 0}d
                 </span>
               )}
+              {/* Columna extra (rowMeta). En VelziaCAD es el RESPONSABLE: nombre
+                  del proveedor/persona, o aviso ámbar cuando no hay ninguno. */}
+              {rowMeta && (() => {
+                const meta = row.activityId ? rowMeta.get(row.activityId) : undefined;
+                if (!meta) return <span style={{ width: metaWidth, flexShrink: 0 }} />;
+                const color =
+                  meta.tone === 'warn' ? '#b45309' : meta.tone === 'muted' ? COLORS.textMuted : '#334155';
+                return (
+                  <span
+                    title={meta.label}
+                    style={{
+                      width: metaWidth,
+                      flexShrink: 0,
+                      fontSize: 11,
+                      color,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      fontWeight: meta.tone === 'warn' ? 600 : 400,
+                    }}
+                  >
+                    {meta.label}
+                  </span>
+                );
+              })()}
             </div>
           );
         })}
