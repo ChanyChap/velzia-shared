@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, ChevronRight, Diamond, FolderTree, Pencil, Check, GripVertical, PanelLeftClose, PanelLeftOpen, CornerDownRight } from 'lucide-react';
 import { COLORS, ROW_HEIGHT as DEFAULT_ROW_HEIGHT, HEADER_HEIGHT, LEFT_PANEL_WIDTH } from './constants';
 import { formatDurationShort, pickNaturalUnit, unitToDays } from './format-duration';
@@ -47,6 +47,97 @@ interface TaskListProps {
   onToggleCollapsed?: () => void;
   // Grabber de redimensión del borde derecho (lo provee el contenedor).
   onResizePointerDown?: (e: ReactPointerEvent) => void;
+  // ── Columnas internas redimensionables (todo opcional) ──────────────────
+  // Ancho en px de la columna "Duración". Es el interruptor del modo columnas:
+  // sin él la duración se pinta pegada al nombre y sin cabecera, como siempre
+  // (RefoTask y el Gantt de plantilla no cambian ni un píxel).
+  durationColWidth?: number;
+  // Separador Nombre|Duración: arrastre y doble clic para restablecer.
+  onDurationResizePointerDown?: (e: ReactPointerEvent) => void;
+  onDurationResizeReset?: () => void;
+  // Separador Duración|columna extra. Solo se pinta si hay `rowMeta`.
+  onMetaResizePointerDown?: (e: ReactPointerEvent) => void;
+  onMetaResizeReset?: () => void;
+}
+
+// Ancho del botón de colapsar de la cabecera (icono de 15 px + 2 de padding a
+// cada lado). Las filas reservan ese mismo hueco al final para que las columnas
+// caigan exactamente a plomo bajo sus títulos.
+const COLLAPSE_BTN_WIDTH = 19;
+
+// Recorte con puntos suspensivos: lo comparten cabeceras y celdas para que al
+// estrechar una columna el texto se corte en vez de desbordar sobre la vecina.
+const ELLIPSIS_STYLE: CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+// Cabecera de una columna con ancho propio (Duración y la columna extra). La
+// guía vertical se pinta con borderLeft para que arranque aquí y siga por todas
+// las filas: así se ve de dónde a dónde llega cada columna.
+const HEADER_COL_STYLE: CSSProperties = {
+  boxSizing: 'border-box',
+  flexShrink: 0,
+  display: 'flex',
+  alignItems: 'center',
+  padding: '0 6px',
+  fontSize: 11,
+  fontWeight: 600,
+  color: COLORS.textMuted,
+  borderLeft: `1px solid ${COLORS.grid}`,
+};
+
+// Celda de esa misma columna dentro de una fila: mismo ancho y misma guía que
+// su cabecera.
+const ROW_COL_STYLE: CSSProperties = {
+  boxSizing: 'border-box',
+  flexShrink: 0,
+  display: 'flex',
+  alignItems: 'center',
+  padding: '0 6px',
+  overflow: 'hidden',
+  borderLeft: `1px solid ${COLORS.grid}`,
+};
+
+// Separador arrastrable entre dos columnas de la cabecera. Ocupa 0 px en el
+// flujo (no descuadra el reparto de anchos) y la zona de agarre es un overlay
+// de 6 px centrado sobre la junta, que es lo que hace cómodo el arrastre.
+// Doble clic = restablecer el ancho por defecto de esa columna.
+function ColumnResizer({
+  onPointerDown,
+  onDoubleClick,
+  title,
+  label,
+}: {
+  onPointerDown: (e: ReactPointerEvent) => void;
+  onDoubleClick?: () => void;
+  title: string;
+  label: string;
+}) {
+  return (
+    <span style={{ position: 'relative', width: 0, flexShrink: 0, alignSelf: 'stretch' }}>
+      <span
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={label}
+        onPointerDown={onPointerDown}
+        onDoubleClick={onDoubleClick}
+        title={title}
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: -3,
+          width: 6,
+          cursor: 'col-resize',
+          touchAction: 'none',
+          zIndex: 7,
+        }}
+      />
+    </span>
+  );
 }
 
 function rowBackground(row: TaskRow, selected: boolean, hover: boolean): string {
@@ -128,10 +219,22 @@ function TaskListImpl({
   panelCollapsed = false,
   onToggleCollapsed,
   onResizePointerDown,
+  durationColWidth,
+  onDurationResizePointerDown,
+  onDurationResizeReset,
+  onMetaResizePointerDown,
+  onMetaResizeReset,
 }: TaskListProps) {
   const ROW_HEIGHT = rowHeight ?? DEFAULT_ROW_HEIGHT;
   const panelWidth = width ?? LEFT_PANEL_WIDTH;
   const metaWidth = rowMetaWidth ?? 130;
+  // Modo columnas: solo cuando el contenedor manda el ancho de "Duración".
+  // Sin él todo se pinta como antes (retrocompatibilidad con RefoTask).
+  const columnsMode = durationColWidth != null;
+  const durWidth = durationColWidth ?? 0;
+  // Hueco final que ocupa el botón de colapsar en la cabecera y que las filas
+  // replican para que las dos rejillas coincidan.
+  const trailWidth = onToggleCollapsed ? COLLAPSE_BTN_WIDTH : 0;
   const [edit, setEdit] = useState<EditState | null>(null);
   const editingRow = edit ? rows.find(r => r.id === edit.rowId) : null;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -216,6 +319,27 @@ function TaskListImpl({
     );
   }
 
+  // El botón de colapsar es el mismo con y sin columnas: se declara una vez
+  // porque en modo columnas viaja dentro del grupo derecho de la cabecera.
+  const collapseButton = onToggleCollapsed ? (
+    <button
+      type="button"
+      onClick={onToggleCollapsed}
+      title="Colapsar Estructura EDT"
+      aria-label="Colapsar Estructura EDT"
+      style={{
+        border: 'none',
+        background: 'transparent',
+        cursor: 'pointer',
+        color: COLORS.textMuted,
+        padding: 2,
+        ...(columnsMode ? { flexShrink: 0, alignSelf: 'center' } : {}),
+      }}
+    >
+      <PanelLeftClose size={15} />
+    </button>
+  ) : null;
+
   return (
     <div
       className="border-r bg-white"
@@ -240,31 +364,65 @@ function TaskListImpl({
           background: '#f8fafc',
         }}
       >
-        <span style={{ flex: 1 }}>Estructura EDT</span>
-        {rowMeta && rowMetaHeader && (
-          <span
-            style={{
-              width: metaWidth,
-              flexShrink: 0,
-              fontSize: 11,
-              fontWeight: 600,
-              color: COLORS.textMuted,
-              textAlign: 'left',
-            }}
-          >
-            {rowMetaHeader}
-          </span>
-        )}
-        {onToggleCollapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            title="Colapsar Estructura EDT"
-            aria-label="Colapsar Estructura EDT"
-            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: COLORS.textMuted, padding: 2 }}
-          >
-            <PanelLeftClose size={15} />
-          </button>
+        <span
+          style={
+            columnsMode
+              ? { flex: 1, ...ELLIPSIS_STYLE }
+              : { flex: 1 }
+          }
+        >
+          Estructura EDT
+        </span>
+        {columnsMode ? (
+          // Grupo derecho de la cabecera: gap 0 y el mismo hueco final que las
+          // filas, para que cada separador caiga justo sobre la guía vertical
+          // de su columna. "Nombre" no está aquí: es el flex:1 que absorbe el
+          // resto, así arrastrar reparte espacio y nunca aparece scroll.
+          <div style={{ display: 'flex', alignItems: 'stretch', alignSelf: 'stretch', gap: 0, flexShrink: 0 }}>
+            {onDurationResizePointerDown && (
+              <ColumnResizer
+                onPointerDown={onDurationResizePointerDown}
+                onDoubleClick={onDurationResizeReset}
+                title="Arrastra para repartir el ancho entre Estructura EDT y Duración · doble clic para restablecer"
+                label="Cambiar el ancho de la columna Duración"
+              />
+            )}
+            <span style={{ ...HEADER_COL_STYLE, width: durWidth, justifyContent: 'flex-end' }}>
+              <span style={ELLIPSIS_STYLE}>Duración</span>
+            </span>
+            {rowMeta && onMetaResizePointerDown && (
+              <ColumnResizer
+                onPointerDown={onMetaResizePointerDown}
+                onDoubleClick={onMetaResizeReset}
+                title={`Arrastra para repartir el ancho entre Duración y ${rowMetaHeader ?? 'la última columna'} · doble clic para restablecer`}
+                label={`Cambiar el ancho de la columna ${rowMetaHeader ?? 'final'}`}
+              />
+            )}
+            {rowMeta && (
+              <span style={{ ...HEADER_COL_STYLE, width: metaWidth }}>
+                <span style={ELLIPSIS_STYLE}>{rowMetaHeader ?? ''}</span>
+              </span>
+            )}
+            {collapseButton}
+          </div>
+        ) : (
+          <>
+            {rowMeta && rowMetaHeader && (
+              <span
+                style={{
+                  width: metaWidth,
+                  flexShrink: 0,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: COLORS.textMuted,
+                  textAlign: 'left',
+                }}
+              >
+                {rowMetaHeader}
+              </span>
+            )}
+            {collapseButton}
+          </>
         )}
       </div>
       <div style={{ transform: `translateY(${-scrollTop}px)`, position: 'relative' }}>
@@ -577,99 +735,156 @@ function TaskListImpl({
                   <Pencil size={12} />
                 </button>
               )}
-              {/* Celda de duración editable. Se muestra en ACTIVIDADES, incluidos
-                  los HITOS: editar la duración de un hito a > 0 lo convierte en
-                  actividad (lo gestiona onCommitDuration). Antes los hitos no
-                  permitían editar duración (Chany 30 may). */}
-              {row.kind === 'activity' && (
-                isEditingDuration ? (
-                  <span
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <input
-                      ref={inputRef}
-                      className="w-14 text-xs px-1 py-0 border border-blue-400 rounded outline-none tabular-nums"
-                      value={edit!.value}
-                      onChange={e => setEdit({ ...edit!, value: e.target.value })}
-                      onBlur={commit}
-                      onKeyDown={handleKey}
-                      placeholder="2d, 4h…"
-                    />
-                    <Check
-                      size={12}
-                      className="text-emerald-600 cursor-pointer"
-                      onClick={commit}
-                    />
-                  </span>
-                ) : (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: COLORS.textMuted,
-                      fontVariantNumeric: 'tabular-nums',
-                      flexShrink: 0,
-                      cursor: canEdit ? 'text' : 'default',
-                      padding: '0 2px',
-                      borderRadius: 3,
-                    }}
-                    onClick={e => {
-                      // UN SOLO click entra en edición (antes hacía falta doble
-                      // click). stopPropagation para no seleccionar la fila al
-                      // pinchar el número. Enter confirma; el guardado es
-                      // optimista en onCommitDuration. Chany 31 may.
-                      if (!canEdit) return;
-                      e.stopPropagation();
-                      setEdit({ rowId: row.id, field: 'duration', value: formatDurationShort(row.days) });
-                    }}
-                    onDoubleClick={e => {
-                      // Evita que el doble click sobre la celda abra además el
-                      // modal de la actividad (onRowDoubleClick de la fila).
-                      if (!canEdit) return;
-                      e.stopPropagation();
-                    }}
-                    title={canEdit ? 'Click para editar la duración (Enter para guardar)' : undefined}
-                  >
-                    {formatDurationShort(row.days)}
-                  </span>
-                )
-              )}
-              {row.kind === 'pre-activity' && (
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: COLORS.preActivityStroke,
-                    fontVariantNumeric: 'tabular-nums',
-                    flexShrink: 0,
-                  }}
-                  title="Días antes del inicio de la actividad madre"
-                >
-                  -{row.leadDays ?? 0}d
-                </span>
-              )}
-              {/* Columna extra (rowMeta). En VelziaCAD es el RESPONSABLE: nombre
-                  del proveedor/persona, o aviso ámbar cuando no hay ninguno. */}
-              {rowMeta && (() => {
-                const meta = row.activityId ? rowMeta.get(row.activityId) : undefined;
-                if (!meta) return <span style={{ width: metaWidth, flexShrink: 0 }} />;
-                const color =
-                  meta.tone === 'warn' ? '#b45309' : meta.tone === 'muted' ? COLORS.textMuted : '#334155';
+              {/* Cola de la fila: Duración y columna extra. En modo columnas
+                  van dentro de un grupo de ancho fijo (gap 0 + hueco final
+                  igual al de la cabecera) para que caigan a plomo bajo sus
+                  títulos; sin ese modo se pintan sueltas, como siempre. */}
+              {(() => {
+                const meta = rowMeta && row.activityId ? rowMeta.get(row.activityId) : undefined;
+                const metaColor =
+                  meta?.tone === 'warn' ? '#b45309' : meta?.tone === 'muted' ? COLORS.textMuted : '#334155';
+                // Con columna propia el texto debe poder encogerse y recortarse;
+                // sin ella conserva el flexShrink: 0 de siempre.
+                const durationFit: CSSProperties = columnsMode
+                  ? { ...ELLIPSIS_STYLE, flexShrink: 1 }
+                  : { flexShrink: 0 };
+                // Celda de duración editable. Se muestra en ACTIVIDADES, incluidos
+                // los HITOS: editar la duración de un hito a > 0 lo convierte en
+                // actividad (lo gestiona onCommitDuration). Antes los hitos no
+                // permitían editar duración (Chany 30 may).
+                const duration =
+                  row.kind === 'activity' ? (
+                    isEditingDuration ? (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          ...(columnsMode ? { flex: 1, minWidth: 0 } : {}),
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <input
+                          ref={inputRef}
+                          className={`text-xs px-1 py-0 border border-blue-400 rounded outline-none tabular-nums${columnsMode ? '' : ' w-14'}`}
+                          style={columnsMode ? { flex: 1, minWidth: 0 } : undefined}
+                          value={edit!.value}
+                          onChange={e => setEdit({ ...edit!, value: e.target.value })}
+                          onBlur={commit}
+                          onKeyDown={handleKey}
+                          placeholder="2d, 4h…"
+                        />
+                        <Check
+                          size={12}
+                          className="text-emerald-600 cursor-pointer"
+                          onClick={commit}
+                        />
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: COLORS.textMuted,
+                          fontVariantNumeric: 'tabular-nums',
+                          ...durationFit,
+                          cursor: canEdit ? 'text' : 'default',
+                          padding: '0 2px',
+                          borderRadius: 3,
+                        }}
+                        onClick={e => {
+                          // UN SOLO click entra en edición (antes hacía falta doble
+                          // click). stopPropagation para no seleccionar la fila al
+                          // pinchar el número. Enter confirma; el guardado es
+                          // optimista en onCommitDuration. Chany 31 may.
+                          if (!canEdit) return;
+                          e.stopPropagation();
+                          setEdit({ rowId: row.id, field: 'duration', value: formatDurationShort(row.days) });
+                        }}
+                        onDoubleClick={e => {
+                          // Evita que el doble click sobre la celda abra además el
+                          // modal de la actividad (onRowDoubleClick de la fila).
+                          if (!canEdit) return;
+                          e.stopPropagation();
+                        }}
+                        title={canEdit ? 'Click para editar la duración (Enter para guardar)' : undefined}
+                      >
+                        {formatDurationShort(row.days)}
+                      </span>
+                    )
+                  ) : row.kind === 'pre-activity' ? (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: COLORS.preActivityStroke,
+                        fontVariantNumeric: 'tabular-nums',
+                        ...durationFit,
+                      }}
+                      title="Días antes del inicio de la actividad madre"
+                    >
+                      -{row.leadDays ?? 0}d
+                    </span>
+                  ) : null;
+
+                // Sin modo columnas: exactamente el mismo marcado de siempre —
+                // duración suelta y, si hay rowMeta, su celda de ancho fijo (o
+                // un hueco vacío para que las de abajo no se desalineen).
+                if (!columnsMode) {
+                  return (
+                    <>
+                      {duration}
+                      {rowMeta &&
+                        (meta ? (
+                          <span
+                            title={meta.label}
+                            style={{
+                              width: metaWidth,
+                              flexShrink: 0,
+                              fontSize: 11,
+                              color: metaColor,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              fontWeight: meta.tone === 'warn' ? 600 : 400,
+                            }}
+                          >
+                            {meta.label}
+                          </span>
+                        ) : (
+                          <span style={{ width: metaWidth, flexShrink: 0 }} />
+                        ))}
+                    </>
+                  );
+                }
+
+                // Con columnas: la celda de duración se pinta SIEMPRE (aunque el
+                // paquete o la sub-tarea no tenga), porque si no la columna
+                // extra se correría a la izquierda en esas filas.
                 return (
-                  <span
-                    title={meta.label}
-                    style={{
-                      width: metaWidth,
-                      flexShrink: 0,
-                      fontSize: 11,
-                      color,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      fontWeight: meta.tone === 'warn' ? 600 : 400,
-                    }}
-                  >
-                    {meta.label}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'stretch', alignSelf: 'stretch', gap: 0, flexShrink: 0 }}>
+                    <span style={{ ...ROW_COL_STYLE, width: durWidth, justifyContent: 'flex-end' }}>
+                      {duration}
+                    </span>
+                    {/* Columna extra (rowMeta). En VelziaCAD es el RESPONSABLE:
+                        nombre del proveedor/persona, o aviso ámbar si falta. */}
+                    {rowMeta && (
+                      <span style={{ ...ROW_COL_STYLE, width: metaWidth }}>
+                        {meta && (
+                          <span
+                            title={meta.label}
+                            style={{
+                              ...ELLIPSIS_STYLE,
+                              fontSize: 11,
+                              color: metaColor,
+                              fontWeight: meta.tone === 'warn' ? 600 : 400,
+                            }}
+                          >
+                            {meta.label}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {trailWidth > 0 && <span style={{ width: trailWidth, flexShrink: 0 }} />}
+                  </div>
                 );
               })()}
             </div>

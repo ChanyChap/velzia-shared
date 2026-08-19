@@ -1368,6 +1368,21 @@ export function ScheduleGantt({
   const { width: panelWidth, onPointerDown: onPanelResize } = useResizableColumn(
     'gantt-proyecto-panel-width', LEFT_PANEL_WIDTH, { min: 180, max: 700 },
   );
+  // Columnas INTERNAS del panel: cada una guarda su ancho por usuario, igual
+  // que el panel entero. "Nombre" no tiene ancho propio a propósito: absorbe
+  // lo que sobra, así arrastrar un separador reparte en vez de crear scroll.
+  const {
+    width: durationColWidth,
+    onPointerDown: onDurationColResize,
+    reset: resetDurationCol,
+  } = useResizableColumn('gantt-proyecto-col-duracion-width', 72, { min: 48, max: 200, invert: true });
+  // El ancho que pide la app (rowMetaWidth) es solo el ARRANQUE: en cuanto el
+  // usuario ajusta la columna manda su preferencia guardada.
+  const {
+    width: metaColWidth,
+    onPointerDown: onMetaColResize,
+    reset: resetMetaCol,
+  } = useResizableColumn('gantt-proyecto-col-meta-width', rowMetaWidth ?? 130, { min: 90, max: 400, invert: true });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   return (
@@ -1536,7 +1551,12 @@ export function ScheduleGantt({
           } : undefined}
           rowMeta={rowMeta}
           rowMetaHeader={rowMetaHeader}
-          rowMetaWidth={rowMetaWidth}
+          rowMetaWidth={metaColWidth}
+          durationColWidth={durationColWidth}
+          onDurationResizePointerDown={onDurationColResize}
+          onDurationResizeReset={resetDurationCol}
+          onMetaResizePointerDown={onMetaColResize}
+          onMetaResizeReset={resetMetaCol}
           width={panelWidth}
           panelCollapsed={panelCollapsed}
           onToggleCollapsed={() => setPanelCollapsed(v => !v)}
