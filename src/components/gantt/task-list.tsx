@@ -38,6 +38,10 @@ interface TaskListProps {
   onGripDoubleClick?: (rowId: string) => void;
   rowDragState?: { fromRowId: string; hoverIndex: number; fromIndex: number } | null;
   onContextMenuRow?: (rowId: string, x: number, y: number) => void;
+  // Clic sobre la INSIGNIA DE ESTADO de una fila. Solo con esta prop la insignia
+  // pasa de adorno a botón, para que la app abra ahí su propio selector de
+  // estado. Sin ella se pinta el <span> inerte de siempre (RefoTask no cambia).
+  onStatusBadgeClick?: (rowId: string, event: ReactMouseEvent) => void;
   // Zoom vertical. Si no se pasa, usa el default global.
   rowHeight?: number;
   // Ancho del panel (px). Si no se pasa, usa LEFT_PANEL_WIDTH.
@@ -214,6 +218,7 @@ function TaskListImpl({
   onGripDoubleClick,
   rowDragState,
   onContextMenuRow,
+  onStatusBadgeClick,
   rowHeight,
   width,
   panelCollapsed = false,
@@ -663,8 +668,37 @@ function TaskListImpl({
                   >
                     {row.name}
                   </span>
-                  {/* Insignia de estado (VelziaCAD): punto de color + etiqueta corta. */}
-                  {row.statusBadge && (
+                  {/* Insignia de estado (VelziaCAD): punto de color + etiqueta corta.
+                      Con `onStatusBadgeClick` se pinta como BOTÓN para que la app abra
+                      ahí su selector de estado; sin la prop sigue siendo el <span>
+                      inerte de siempre, byte a byte (RefoTask no cambia ni un píxel). */}
+                  {row.statusBadge && (onStatusBadgeClick ? (
+                    <button
+                      type="button"
+                      data-status-badge={row.id}
+                      title={`Cambiar estado: ${row.statusBadge.label}`}
+                      aria-label={`Cambiar estado: ${row.statusBadge.label}`}
+                      onClick={e => {
+                        // Sin frenar la propagación el clic subiría al onClick de la
+                        // fila y la seleccionaría en vez de abrir el selector.
+                        e.stopPropagation();
+                        onStatusBadgeClick?.(row.id, e);
+                      }}
+                      style={{
+                        // `font` y `appearance` van ANTES que fontSize/lineHeight: la
+                        // forma corta `font` los resetearía si fuese después. Con esto
+                        // el botón se ve idéntico al <span> (sin estilo de sistema).
+                        font: 'inherit', appearance: 'none', margin: 0, cursor: 'pointer',
+                        display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+                        fontSize: 10, lineHeight: '14px', padding: '0 6px', borderRadius: 999,
+                        background: `${row.statusBadge.color}1a`, border: `1px solid ${row.statusBadge.color}66`,
+                        color: '#334155', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <span style={{ width: 7, height: 7, borderRadius: 999, background: row.statusBadge.color, flexShrink: 0 }} />
+                      {row.statusBadge.label}
+                    </button>
+                  ) : (
                     <span
                       title={row.statusBadge.label}
                       style={{
@@ -677,7 +711,7 @@ function TaskListImpl({
                       <span style={{ width: 7, height: 7, borderRadius: 999, background: row.statusBadge.color, flexShrink: 0 }} />
                       {row.statusBadge.label}
                     </span>
-                  )}
+                  ))}
                   {/* Pills de empresa(s) asignada(s) — solo Gantt de proyecto.
                       Color por empresa + nombre corto; tooltip con el nombre
                       completo. Si no hay empresa, no se pinta nada. */}

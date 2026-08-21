@@ -90,6 +90,11 @@ export interface ScheduleGanttProps {
   // el id de la tarea. Sirve para abrir el mismo modal que el doble click, sin
   // que la app tenga que interceptar el contextmenu del árbol.
   onOpenTaskProperties?: (taskId: string) => void;
+  // Clic sobre la INSIGNIA DE ESTADO de una fila del árbol EDT. Si se pasa, la
+  // insignia deja de ser un adorno y se vuelve pulsable, para que la app abra
+  // ahí su propio selector de estado. Recibe el id de FILA del Gantt y el
+  // evento (para clientX/clientY). Sin la prop, la insignia sigue inerte.
+  onStatusBadgeClick?: (rowId: string, event: ReactMouseEvent) => void;
   // Columna extra al final de cada fila del árbol, indexada por id de tarea.
   // VelziaCAD la usa para el RESPONSABLE (proveedor/persona o aviso si falta).
   rowMeta?: Map<string, { label: string; tone?: 'ok' | 'warn' | 'muted' }>;
@@ -174,6 +179,7 @@ export function ScheduleGantt({
   onOpenTask,
   onBarContextMenu,
   onOpenTaskProperties,
+  onStatusBadgeClick,
   rowMeta,
   rowMetaHeader,
   rowMetaWidth,
@@ -1549,6 +1555,7 @@ export function ScheduleGantt({
             // acciones de reorden solo tienen sentido en las actividades.
             if (r?.activityId) setCtxMenu({ taskId: r.activityId, canReorder: r.kind === 'activity', x, y });
           } : undefined}
+          onStatusBadgeClick={onStatusBadgeClick}
           rowMeta={rowMeta}
           rowMetaHeader={rowMetaHeader}
           rowMetaWidth={metaColWidth}
