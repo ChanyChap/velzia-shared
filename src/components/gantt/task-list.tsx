@@ -51,6 +51,9 @@ interface TaskListProps {
   onToggleCollapsed?: () => void;
   // Grabber de redimensión del borde derecho (lo provee el contenedor).
   onResizePointerDown?: (e: ReactPointerEvent) => void;
+  // Doble clic sobre ese grabber: devuelve el panel a su ancho por defecto.
+  // Es la salida de emergencia si el usuario lo ensancha hasta tapar el Gantt.
+  onResizeReset?: () => void;
   // ── Columnas internas redimensionables (todo opcional) ──────────────────
   // Ancho en px de la columna "Duración". Es el interruptor del modo columnas:
   // sin él la duración se pinta pegada al nombre y sin cabecera, como siempre
@@ -224,6 +227,7 @@ function TaskListImpl({
   panelCollapsed = false,
   onToggleCollapsed,
   onResizePointerDown,
+  onResizeReset,
   durationColWidth,
   onDurationResizePointerDown,
   onDurationResizeReset,
@@ -929,7 +933,10 @@ function TaskListImpl({
       {onResizePointerDown && (
         <div
           onPointerDown={onResizePointerDown}
-          title="Arrastra para cambiar el ancho del panel"
+          onDoubleClick={onResizeReset}
+          title={onResizeReset
+            ? 'Arrastra para cambiar el ancho del panel (doble clic: ancho por defecto)'
+            : 'Arrastra para cambiar el ancho del panel'}
           style={{
             position: 'absolute',
             top: 0,

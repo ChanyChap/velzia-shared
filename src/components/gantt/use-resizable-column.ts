@@ -20,7 +20,16 @@ import { usePersistentState } from "./use-persistent-state";
 export function useResizableColumn(
   storageKey: string,
   defaultWidth: number,
-  opts?: { min?: number; max?: number; invert?: boolean },
+  opts?: {
+    min?: number;
+    max?: number;
+    invert?: boolean;
+    // Acota AL PINTAR el ancho guardado dentro de [min, max] sin reescribir la
+    // preferencia: un ancho elegido en un monitor grande no desborda en un
+    // portátil, y al volver al grande se recupera intacto. Va opt-in para no
+    // cambiar el comportamiento de las columnas que ya usan el hook sin él.
+    clampStored?: boolean;
+  },
 ): {
   width: number;
   onPointerDown: (e: React.PointerEvent) => void;
@@ -34,7 +43,13 @@ export function useResizableColumn(
   // izquierda, así que arrastrar hacia la derecha la ESTRECHA: sin este signo
   // el separador huiría del cursor.
   const sign = opts?.invert ? -1 : 1;
-  const [width, setWidth] = usePersistentState<number>(storageKey, defaultWidth);
+  const [storedWidth, setWidth] = usePersistentState<number>(storageKey, defaultWidth);
+  // El ancho EFECTIVO es el que se pinta y del que arranca el arrastre. Sin
+  // acotarlo, un valor guardado fuera de rango dejaría una zona muerta al
+  // arrastrar (el separador no se movía hasta recuperar la diferencia).
+  const width = opts?.clampStored
+    ? Math.max(min, Math.min(max, storedWidth))
+    : storedWidth;
   // Punto de partida del arrastre: posición X y ancho al pulsar.
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
 

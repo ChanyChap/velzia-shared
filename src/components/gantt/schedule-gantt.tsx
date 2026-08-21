@@ -166,6 +166,20 @@ function _statusColor(status: string): { fill: string; stroke: string } {
   }
 }
 
+// Reparto del ancho entre «Estructura EDT» y el Gantt. El panel puede
+// tragarse casi todo el contenedor, pero se reservan unos píxeles a la derecha
+// para que el separador siga a la vista y se pueda devolver: un usuario que
+// ensancha del todo y ya no puede volver atrás está peor que con un tope fijo.
+const PANEL_EDGE_RESERVE = 28;
+// Mínimo real del arrastre. Por debajo de PANEL_COLLAPSE_AT el panel se colapsa
+// solo (tira de 30 px con su botón de expandir) en vez de quedarse en una franja
+// demasiado estrecha para leer nada.
+const PANEL_MIN_WIDTH = 60;
+const PANEL_COLLAPSE_AT = 120;
+// Tope de respaldo hasta que se mide el contenedor (SSR y primer render): es el
+// que había antes, así el primer pintado no cambia.
+const PANEL_FALLBACK_MAX = 700;
+
 export function ScheduleGantt({
   projectId,
   tareas,
@@ -1371,8 +1385,33 @@ export function ScheduleGantt({
   }, [isFullscreen]);
 
   // Panel "Estructura EDT": ancho redimensionable + colapso.
-  const { width: panelWidth, onPointerDown: onPanelResize } = useResizableColumn(
-    'gantt-proyecto-panel-width', LEFT_PANEL_WIDTH, { min: 180, max: 700 },
+  // Medimos el CONTENEDOR real (panel + timeline), no window.innerWidth: el
+  // Gantt vive dentro de un layout con barras laterales, así que la ventana no
+  // dice nada del sitio del que dispone de verdad.
+  const [hostWidth, setHostWidth] = useState(0);
+  useEffect(() => {
+    const host = wheelHostRef.current;
+    if (!host || typeof ResizeObserver === 'undefined') return;
+    setHostWidth(host.getBoundingClientRect().width);
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setHostWidth(w);
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, []);
+  // Tope superior DINÁMICO: el panel llega hasta tapar el Gantt salvo el margen
+  // reservado para el separador. Sin medida todavía, el tope de siempre.
+  const maxPanelWidth = hostWidth > 0
+    ? Math.max(PANEL_MIN_WIDTH, hostWidth - PANEL_EDGE_RESERVE)
+    : PANEL_FALLBACK_MAX;
+  const {
+    width: panelWidth,
+    onPointerDown: onPanelResize,
+    reset: resetPanelWidth,
+  } = useResizableColumn(
+    'gantt-proyecto-panel-width', LEFT_PANEL_WIDTH,
+    { min: PANEL_MIN_WIDTH, max: maxPanelWidth, clampStored: true },
   );
   // Columnas INTERNAS del panel: cada una guarda su ancho por usuario, igual
   // que el panel entero. "Nombre" no tiene ancho propio a propósito: absorbe
@@ -1390,6 +1429,24 @@ export function ScheduleGantt({
     reset: resetMetaCol,
   } = useResizableColumn('gantt-proyecto-col-meta-width', rowMetaWidth ?? 130, { min: 90, max: 400, invert: true });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // Arrastrar el separador casi hasta el borde colapsa el panel en vez de dejar
+  // una franja ilegible: así el Gantt se queda con todo y el botón de expandir
+  // sigue ahí para deshacerlo.
+  useEffect(() => {
+    // Solo cuando el contenedor da para un panel de verdad: si es tan estrecho
+    // que el propio tope cae bajo el umbral, colapsar dejaría el botón de
+    // expandir sin efecto (se volvería a colapsar en el acto).
+    if (maxPanelWidth < PANEL_COLLAPSE_AT) return;
+    if (panelWidth < PANEL_COLLAPSE_AT) setPanelCollapsed(true);
+  }, [panelWidth, maxPanelWidth]);
+  const togglePanelCollapsed = useCallback(() => {
+    if (!panelCollapsed) { setPanelCollapsed(true); return; }
+    // Al expandir, si el ancho guardado se quedó bajo el umbral (se colapsó
+    // arrastrando), volvemos al ancho por defecto: si no, el panel reaparecería
+    // como una franja y el efecto de arriba lo colapsaría otra vez al instante.
+    if (panelWidth < PANEL_COLLAPSE_AT) resetPanelWidth();
+    setPanelCollapsed(false);
+  }, [panelCollapsed, panelWidth, resetPanelWidth]);
 
   return (
     <div className="space-y-3">
@@ -1566,8 +1623,9 @@ export function ScheduleGantt({
           onMetaResizeReset={resetMetaCol}
           width={panelWidth}
           panelCollapsed={panelCollapsed}
-          onToggleCollapsed={() => setPanelCollapsed(v => !v)}
+          onToggleCollapsed={togglePanelCollapsed}
           onResizePointerDown={onPanelResize}
+          onResizeReset={resetPanelWidth}
         />
         <div
           ref={bodyWrapperRef}
