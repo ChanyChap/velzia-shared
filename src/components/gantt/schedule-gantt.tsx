@@ -81,6 +81,16 @@ export interface ScheduleGanttProps {
   currentUserId?: string | null;
   onResizeTask: (taskId: string, newStartISO: string, newEndISO: string) => Promise<void>;
   onSelectTask: (taskId: string) => void;
+  /**
+   * Avisa de la selección COMPLETA cada vez que cambia, incluida la múltiple con
+   * Ctrl/Shift (que `onSelectTask` no reporta: solo se dispara en el clic
+   * simple). Llegan ids de ACTIVIDAD; las filas de paquete se descartan.
+   *
+   * Existe para que la app pueda ofrecer acciones en lote sobre lo seleccionado
+   * —asignar responsable a varias, borrarlas de una vez— sin duplicar aquí la
+   * lógica de cada app. Opcional: sin ella el componente se comporta igual.
+   */
+  onSelectionChange?: (activityIds: string[]) => void;
   onOpenTask: (taskId: string) => void;
   // Clic DERECHO sobre la barra de una tarea → la app pinta su menú de estado.
   // Recibe el id de la tarea (activityId) y el evento (para clientX/clientY).
@@ -190,6 +200,7 @@ export function ScheduleGantt({
   currentUserId,
   onResizeTask,
   onSelectTask,
+  onSelectionChange,
   onOpenTask,
   onBarContextMenu,
   onOpenTaskProperties,
@@ -801,6 +812,26 @@ export function ScheduleGantt({
     minStartDate: minStart,
     rowHeight,
   });
+
+  // La selección se traduce a ids de ACTIVIDAD antes de salir del componente:
+  // los rowId llevan prefijo ('wp:' / 'activity:') y son un detalle interno.
+  // Se avisa en un efecto y no dentro del handler del clic porque la selección
+  // también cambia al pinchar una dependencia, que la vacía.
+  const activityIdsSeleccionados = useMemo(() => {
+    const out: string[] = [];
+    for (const r of rows) {
+      if (selectedRowIds.has(r.id) && r.activityId) out.push(r.activityId);
+    }
+    return out;
+  }, [rows, selectedRowIds]);
+
+  const firmaSeleccion = activityIdsSeleccionados.join('|');
+  useEffect(() => {
+    onSelectionChange?.(firmaSeleccion.length === 0 ? [] : firmaSeleccion.split('|'));
+    // La firma (y no el array) es la dependencia: el array se reconstruye en
+    // cada render y dispararía el aviso sin que la selección haya cambiado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firmaSeleccion]);
 
   const matchedRowIds = useMemo<Set<string> | null>(() => {
     if (searchTerm.trim().length === 0) return null;
