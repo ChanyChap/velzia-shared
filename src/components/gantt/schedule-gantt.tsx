@@ -91,6 +91,16 @@ export interface ScheduleGanttProps {
    * lógica de cada app. Opcional: sin ella el componente se comporta igual.
    */
   onSelectionChange?: (activityIds: string[]) => void;
+  /**
+   * Leyenda de estados. Sin ella se pinta la de siempre, que lleva los colores
+   * escritos a mano aquí dentro.
+   *
+   * Existe porque los colores de las barras los manda la APP (`barColor`), y una
+   * leyenda con su propia paleta acaba contradiciendo a lo que hay justo debajo
+   * en cuanto la app cambia de colores. Cada entrada trae ya su `background`
+   * resuelto (un color plano o el gradiente del «mitad y mitad»).
+   */
+  legendItems?: { label: string; background: string; borderColor?: string }[];
   onOpenTask: (taskId: string) => void;
   // Clic DERECHO sobre la barra de una tarea → la app pinta su menú de estado.
   // Recibe el id de la tarea (activityId) y el evento (para clientX/clientY).
@@ -201,6 +211,7 @@ export function ScheduleGantt({
   onResizeTask,
   onSelectTask,
   onSelectionChange,
+  legendItems,
   onOpenTask,
   onBarContextMenu,
   onOpenTaskProperties,
@@ -1502,24 +1513,22 @@ export function ScheduleGantt({
             <span className="text-xs font-normal text-red-600 underline">Ver detalle</span>
           </button>
         )}
-        {/* Leyenda de colores por estado. */}
+        {/* Leyenda de colores por estado: la que mande la app, o la de serie. */}
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-5 rounded-full border border-green-700" style={{ background: '#dcfce7' }} />
-            No empezada
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-5 rounded-full border border-green-700" style={{ background: 'linear-gradient(to right, #14532d 50%, #dcfce7 50%)' }} />
-            Empezada
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-5 rounded-full border border-green-700" style={{ background: '#14532d' }} />
-            Terminada
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-5 rounded-full border border-red-800" style={{ background: '#ef4444' }} />
-            Retrasada
-          </span>
+          {(legendItems ?? [
+            { label: 'No empezada', background: '#dcfce7', borderColor: '#15803d' },
+            { label: 'Empezada', background: 'linear-gradient(to right, #14532d 50%, #dcfce7 50%)', borderColor: '#15803d' },
+            { label: 'Terminada', background: '#14532d', borderColor: '#15803d' },
+            { label: 'Retrasada', background: '#ef4444', borderColor: '#991b1b' },
+          ]).map(item => (
+            <span key={item.label} className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-block h-3 w-5 rounded-full border"
+                style={{ background: item.background, borderColor: item.borderColor ?? '#94a3b8' }}
+              />
+              {item.label}
+            </span>
+          ))}
         </div>
       </div>
 
