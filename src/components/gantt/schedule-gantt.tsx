@@ -140,6 +140,22 @@ export interface ScheduleGanttProps {
   calendar?: WorkingCalendar | null;
   // Marcadores verticales en el grid (p.ej. fechas contractuales): línea + etiqueta.
   markers?: Array<{ date: Date; label?: string; color?: string }>;
+  /**
+   * Forzar una actividad a TERMINADA desde la modal «Actividades retrasadas», de
+   * UN CLIC. Recibe el id de la actividad; la app persiste el cierre y firma quién
+   * y cuándo (esa firma es cosa de la app: aquí no se inventa ningún usuario).
+   *
+   * Sin esta prop la modal se queda como estaba, de solo consulta: es la lista de
+   * lo que debía estar cerrado y no lo está, y cada app decide si desde ahí se
+   * puede cerrar o solo mirar.
+   */
+  onForceTaskCompleted?: (taskId: string) => Promise<void>;
+  /**
+   * Firma de los cierres forzados, por id de actividad: quién y cuándo. La modal
+   * la enseña junto a la actividad para que un cierre a mano nunca parezca un
+   * avance real de la obra.
+   */
+  forcedCompletedBy?: Map<string, { name: string | null; at: string | null }>;
 }
 
 // Encuentra el día más temprano entre todas las tareas. Si no hay fechas,
@@ -225,6 +241,8 @@ export function ScheduleGantt({
   workdayHours = 8,
   calendar,
   markers,
+  onForceTaskCompleted,
+  forcedCompletedBy,
 }: ScheduleGanttProps) {
   const { toast } = useToast();
   // Zoom horizontal + vertical persistidos por scope 'project:<projectId>'
@@ -672,6 +690,29 @@ export function ScheduleGantt({
     [rows],
   );
   const [showDelayedModal, setShowDelayedModal] = useState(false);
+  // Actividad cuyo cierre forzado está viajando al servidor. Solo una a la vez:
+  // el gesto es «un clic y ya», y dos clics seguidos sobre la misma fila no deben
+  // mandar dos escrituras.
+  const [forzando, setForzando] = useState<string | null>(null);
+
+  const forzarTerminada = useCallback(
+    async (taskId: string) => {
+      if (!onForceTaskCompleted || forzando) return;
+      setForzando(taskId);
+      try {
+        await onForceTaskCompleted(taskId);
+      } catch (err) {
+        toast({
+          title: 'No se ha podido marcar como terminada',
+          description: describeSupabaseError(err),
+          variant: 'destructive',
+        });
+      } finally {
+        setForzando(null);
+      }
+    },
+    [onForceTaskCompleted, forzando, toast],
+  );
 
   // Menú contextual de la estructura EDT (clic derecho) + diálogo "Poner debajo de…".
   // `taskId` = id de la tarea de la fila (cualquier nivel). `canReorder` marca si
@@ -1789,6 +1830,12 @@ export function ScheduleGantt({
             <DialogDescription>
               Una actividad está retrasada si <strong>debía haber empezado</strong> o{' '}
               <strong>debía haber terminado</strong> (según su fecha planificada) y todavía no lo ha hecho.
+              {onForceTaskCompleted && (
+                <>
+                  {' '}Si en realidad ya está hecha, <strong>«Terminada»</strong> la cierra de un clic y
+                  queda registrado quién lo ha hecho y cuándo.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-auto">
@@ -1801,7 +1848,8 @@ export function ScheduleGantt({
                     <th className="py-2 pr-3 font-medium">Actividad</th>
                     <th className="py-2 px-3 font-medium">Debía empezar</th>
                     <th className="py-2 px-3 font-medium">Debía terminar</th>
-                    <th className="py-2 pl-3 font-medium">Motivo</th>
+                    <th className="py-2 px-3 font-medium">Motivo</th>
+                    {onForceTaskCompleted && <th className="py-2 pl-3 font-medium text-right">Cerrar</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1814,7 +1862,7 @@ export function ScheduleGantt({
                       <td className="py-2 px-3 whitespace-nowrap text-slate-600">
                         {r.plannedEndDate ? format(r.plannedEndDate, 'dd/MM/yyyy', { locale: es }) : '—'}
                       </td>
-                      <td className="py-2 pl-3 text-slate-600">
+                      <td className="py-2 px-3 text-slate-600">
                         <span className="inline-flex items-center gap-1.5">
                           {r.executionState === 'retraso_fin' ? (
                             <Clock className="h-3.5 w-3.5 flex-shrink-0 text-red-600" />
@@ -1826,7 +1874,36 @@ export function ScheduleGantt({
                               ? 'No ha terminado a tiempo.'
                               : 'No ha empezado a tiempo.')}
                         </span>
+                        {/* Firma de un cierre a mano anterior: un forzado no es
+                            avance de obra y tiene que verse quién lo hizo. */}
+                        {r.activityId && forcedCompletedBy?.get(r.activityId) && (
+                          <div className="mt-0.5 text-[11px] text-amber-700">
+                            Forzada a terminada
+                            {forcedCompletedBy.get(r.activityId)?.name
+                              ? ` por ${forcedCompletedBy.get(r.activityId)?.name}`
+                              : ''}
+                            {forcedCompletedBy.get(r.activityId)?.at
+                              ? ` · ${format(new Date(forcedCompletedBy.get(r.activityId)!.at as string), "d/MM/yyyy HH:mm", { locale: es })}`
+                              : ''}
+                          </div>
+                        )}
                       </td>
+                      {onForceTaskCompleted && (
+                        <td className="py-2 pl-3 text-right">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1.5 whitespace-nowrap border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                            disabled={!r.activityId || forzando !== null}
+                            title="Darla por terminada ahora. Queda registrado quién la ha forzado y cuándo."
+                            onClick={() => { if (r.activityId) void forzarTerminada(r.activityId); }}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {forzando === r.activityId ? 'Cerrando…' : 'Terminada'}
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
