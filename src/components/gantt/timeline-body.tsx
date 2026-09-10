@@ -76,6 +76,8 @@ interface TimelineBodyProps {
   onSelect: (rowId: string, event: ReactMouseEvent) => void;
   onOpen: (rowId: string) => void;
   // Clic derecho sobre la cápsula de una fila (menú de estado en la app).
+  // Clic IZQUIERDO sobre la cápsula (no sobre el carril vacío de la fila).
+  onBarClick?: (rowId: string, event: ReactMouseEvent) => void;
   onBarContextMenu?: (rowId: string, event: ReactMouseEvent) => void;
   onResizeStart: (rowId: string, event: ReactPointerEvent) => void;
   onMoveStart: (rowId: string, event: ReactPointerEvent) => void;
@@ -118,6 +120,7 @@ function TimelineBodyImpl({
   onHoverRow,
   onSelect,
   onOpen,
+  onBarClick,
   onBarContextMenu,
   onResizeStart,
   onMoveStart,
@@ -614,6 +617,7 @@ function TimelineBodyImpl({
             dim={matchedRowIds != null && !matchedRowIds.has(row.id)}
             onClick={onSelect}
             onDoubleClick={onOpen}
+            onBarClick={onBarClick}
             onBarContextMenu={onBarContextMenu}
             onResizeStart={onResizeStart}
             onMoveStart={onMoveStart}
