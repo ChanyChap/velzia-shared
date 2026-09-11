@@ -104,6 +104,17 @@ export interface ScheduleGanttProps {
   onOpenTask: (taskId: string) => void;
   // Clic DERECHO sobre la barra de una tarea → la app pinta su menú de estado.
   // Recibe el id de la tarea (activityId) y el evento (para clientX/clientY).
+  /**
+   * Clic IZQUIERDO sobre la BARRA de una tarea. Existe aparte de `onSelectTask`
+   * porque aquel salta igual pinchando el carril vacío de la fila, y una app que
+   * quiera abrir algo justo sobre la barra (VelziaCAD abre ahí el menú de la
+   * actividad) no puede distinguir un caso del otro sin husmear el DOM del SVG.
+   *
+   * No se dispara al terminar un arrastre de la barra (el navegador manda un
+   * `click` también entonces). Sí se dispara en los DOS clics de un doble clic:
+   * quien lo consuma tiene `event.detail` para quedarse solo con el primero.
+   */
+  onBarClick?: (taskId: string, event: ReactMouseEvent) => void;
   onBarContextMenu?: (taskId: string, event: ReactMouseEvent) => void;
   // Si se pasa, el menú contextual de la ESTRUCTURA EDT (clic derecho sobre una
   // fila) añade arriba una entrada "Propiedades de actividad" que llama aquí con
@@ -229,6 +240,7 @@ export function ScheduleGantt({
   onSelectionChange,
   legendItems,
   onOpenTask,
+  onBarClick,
   onBarContextMenu,
   onOpenTaskProperties,
   onStatusBadgeClick,
@@ -940,6 +952,16 @@ export function ScheduleGantt({
       if (row?.activityId) onOpenTask(row.activityId);
     },
     [rows, onOpenTask],
+  );
+
+  // Clic izquierdo sobre una barra → convierte rowId a activityId y avisa a la app.
+  const handleBarClick = useCallback(
+    (rowId: string, e: ReactMouseEvent) => {
+      if (!onBarClick) return;
+      const row = rows.find(r => r.id === rowId);
+      if (row?.activityId) onBarClick(row.activityId, e);
+    },
+    [rows, onBarClick],
   );
 
   // Clic derecho sobre una barra → convierte rowId a activityId y avisa a la app.
@@ -1736,6 +1758,7 @@ export function ScheduleGantt({
             onHoverRow={setHoverRowId}
             onSelect={(rowId, e) => handleRowClick(rowId, e)}
             onOpen={handleOpen}
+            onBarClick={onBarClick ? handleBarClick : undefined}
             onBarContextMenu={onBarContextMenu ? handleBarContextMenu : undefined}
             onResizeStart={drag.beginResize}
             onMoveStart={drag.beginMove}

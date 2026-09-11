@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useMemo, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useCallback, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { COLORS, RESIZE_HANDLE_WIDTH } from './constants';
@@ -25,6 +25,13 @@ interface GanttBarProps {
   dim?: boolean;
   onClick: (rowId: string, event: ReactMouseEvent) => void;
   onDoubleClick: (rowId: string) => void;
+  // Clic IZQUIERDO sobre la CÁPSULA, a diferencia de `onClick`, que también salta
+  // al pinchar el carril vacío de la fila. Opcional.
+  //
+  // No se dispara cuando el puntero se ha movido entre pulsar y soltar: eso era
+  // arrastrar la barra de fecha, no un clic. Sí se dispara en los dos clics de un
+  // doble clic; quien lo consuma tiene `event.detail` para distinguirlos.
+  onBarClick?: (rowId: string, event: ReactMouseEvent) => void;
   // Clic DERECHO sobre la cápsula (VelziaCAD: menú de estado de la tarea). Opcional.
   onBarContextMenu?: (rowId: string, event: ReactMouseEvent) => void;
   onResizeStart: (rowId: string, event: ReactPointerEvent) => void;
@@ -131,6 +138,7 @@ function GanttBarImpl({
   dim = false,
   onClick,
   onDoubleClick,
+  onBarClick,
   onBarContextMenu,
   onResizeStart,
   onMoveStart,
@@ -143,12 +151,28 @@ function GanttBarImpl({
   calendar,
   rightLinePad = 0,
 }: GanttBarProps) {
+  // Dónde se pulsó la cápsula. Un arrastre para cambiar la fecha termina también
+  // en un `click` del navegador, y avisar de él como si fuera un clic haría que
+  // la app abriera algo cada vez que alguien mueve una barra.
+  const pulsacion = useRef<{ x: number; y: number } | null>(null);
+
+  const handlePointerDownCapsula = useCallback((e: ReactPointerEvent) => {
+    pulsacion.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
   const handleClick = useCallback(
     (e: ReactMouseEvent) => {
       e.stopPropagation();
       onClick(row.id, e);
+      if (!onBarClick) return;
+      const inicio = pulsacion.current;
+      pulsacion.current = null;
+      // 4 px de margen: mover el ratón un pelo mientras se pulsa sigue siendo un
+      // clic; a partir de ahí se estaba arrastrando.
+      const arrastre = !!inicio && Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y) > 4;
+      if (!arrastre) onBarClick(row.id, e);
     },
-    [onClick, row.id],
+    [onClick, onBarClick, row.id],
   );
 
   const handleDouble = useCallback(
@@ -365,19 +389,26 @@ function GanttBarImpl({
     const cy = y + BAR_HEIGHT / 2;
     const r = BAR_HEIGHT / 2;
     const points = `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
+    // El rombo respeta el color que manda la app (`barColor`) igual que la
+    // cápsula: sin esto, un hito que la app pinta de rojo por ir con retraso se
+    // quedaba con el color de fábrica y contradecía a las barras de su alrededor.
+    const milestoneFill = row.barColor ?? (row.isCritical ? COLORS.critical : COLORS.milestone);
+    const milestoneStroke = row.barColor ?? (row.isCritical ? COLORS.criticalStroke : COLORS.milestoneStroke);
     return (
       <g style={wrapperStyle}>
         <g
           onClick={handleClick}
           onDoubleClick={handleDouble}
+          onContextMenu={handleContextMenu}
+          onPointerDownCapture={handlePointerDownCapsula}
           style={{ cursor: 'pointer' }}
           opacity={dim ? 0.3 : row.isCollapsedRollup ? 0.7 : 1}
         >
           <title>{tooltipText}</title>
           <polygon
             points={points}
-            fill={row.isCritical ? COLORS.critical : COLORS.milestone}
-            stroke={row.isCritical ? COLORS.criticalStroke : COLORS.milestoneStroke}
+            fill={milestoneFill}
+            stroke={milestoneStroke}
             strokeWidth={selected ? 2 : 1}
           />
           {/* Nombre del hito a la derecha del rombo (igual que las actividades).
@@ -462,6 +493,7 @@ function GanttBarImpl({
       onClick={handleClick}
       onDoubleClick={handleDouble}
       onContextMenu={handleContextMenu}
+      onPointerDownCapture={handlePointerDownCapsula}
       opacity={dim ? 0.3 : row.isCollapsedRollup ? 0.7 : taskOpacity}
     >
       <title>{tooltipText}</title>
