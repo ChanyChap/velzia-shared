@@ -34,6 +34,9 @@ export function useResizableColumn(
   width: number;
   onPointerDown: (e: React.PointerEvent) => void;
   reset: () => void;
+  // Fija el ancho desde fuera (acotado a [min, max]). Lo usa el Gantt para que
+  // el borde derecho del panel mueva también la última columna.
+  setWidth: (w: number) => void;
 } {
   const min = opts?.min ?? 140;
   const max = opts?.max ?? 560;
@@ -86,5 +89,10 @@ export function useResizableColumn(
   // salida rápida cuando el usuario se pasa arrastrando y no acierta a volver.
   const reset = useCallback(() => setWidth(defaultWidth), [setWidth, defaultWidth]);
 
-  return { width, onPointerDown, reset };
+  const setClampedWidth = useCallback(
+    (w: number) => setWidth(Math.max(min, Math.min(max, w))),
+    [setWidth, min, max],
+  );
+
+  return { width, onPointerDown, reset, setWidth: setClampedWidth };
 }

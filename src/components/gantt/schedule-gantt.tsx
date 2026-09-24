@@ -6,7 +6,7 @@
 // (tabla `tareas`) que tienen `start_date` y `end_date` persistidos.
 // Drag-resize del borde derecho persiste end_date (cambia duración real).
 
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEventHandler, type MouseEvent as ReactMouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEventHandler, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { addDays, differenceInCalendarDays, parseISO, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { TaskList } from './task-list';
@@ -1532,7 +1532,37 @@ export function ScheduleGantt({
     width: metaColWidth,
     onPointerDown: onMetaColResize,
     reset: resetMetaCol,
+    setWidth: setMetaColWidth,
   } = useResizableColumn('gantt-proyecto-col-meta-width', rowMetaWidth ?? 130, { min: 90, max: 400, invert: true });
+  // Con columna extra (Responsable), el borde derecho del panel ES el borde
+  // derecho de esa columna: quien lo arrastra quiere ensancharla a ella. Sin
+  // esto el ancho ganado se lo quedaba "Nombre" (el flex:1) y parecía que el
+  // separador estiraba la primera columna.
+  const panelEdgeDragRef = useRef<{ startX: number; startPanel: number; startMeta: number } | null>(null);
+  const onPanelEdgeResize = useCallback((e: ReactPointerEvent) => {
+    onPanelResize(e);
+    if (!rowMeta) return;
+    panelEdgeDragRef.current = { startX: e.clientX, startPanel: panelWidth, startMeta: metaColWidth };
+    const onMove = (ev: PointerEvent) => {
+      const d = panelEdgeDragRef.current;
+      if (!d) return;
+      // Mismo acotado que aplica el hook al panel: la columna solo crece lo
+      // que crece el panel de verdad.
+      const nextPanel = Math.max(PANEL_MIN_WIDTH, Math.min(maxPanelWidth, d.startPanel + ev.clientX - d.startX));
+      setMetaColWidth(d.startMeta + nextPanel - d.startPanel);
+    };
+    const onUp = () => {
+      panelEdgeDragRef.current = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [onPanelResize, rowMeta, panelWidth, metaColWidth, maxPanelWidth, setMetaColWidth]);
+  const resetPanelEdge = useCallback(() => {
+    resetPanelWidth();
+    if (rowMeta) resetMetaCol();
+  }, [resetPanelWidth, resetMetaCol, rowMeta]);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   // Arrastrar el separador casi hasta el borde colapsa el panel en vez de dejar
   // una franja ilegible: así el Gantt se queda con todo y el botón de expandir
@@ -1727,8 +1757,8 @@ export function ScheduleGantt({
           width={panelWidth}
           panelCollapsed={panelCollapsed}
           onToggleCollapsed={togglePanelCollapsed}
-          onResizePointerDown={onPanelResize}
-          onResizeReset={resetPanelWidth}
+          onResizePointerDown={onPanelEdgeResize}
+          onResizeReset={resetPanelEdge}
         />
         <div
           ref={bodyWrapperRef}

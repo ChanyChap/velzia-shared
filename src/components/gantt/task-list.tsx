@@ -934,9 +934,11 @@ function TaskListImpl({
         <div
           onPointerDown={onResizePointerDown}
           onDoubleClick={onResizeReset}
-          title={onResizeReset
-            ? 'Arrastra para cambiar el ancho del panel (doble clic: ancho por defecto)'
-            : 'Arrastra para cambiar el ancho del panel'}
+          title={rowMeta && rowMetaHeader
+            ? `Arrastra para cambiar el ancho de la columna ${rowMetaHeader}${onResizeReset ? ' (doble clic: ancho por defecto)' : ''}`
+            : onResizeReset
+              ? 'Arrastra para cambiar el ancho del panel (doble clic: ancho por defecto)'
+              : 'Arrastra para cambiar el ancho del panel'}
           style={{
             position: 'absolute',
             top: 0,
