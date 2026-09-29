@@ -34,6 +34,18 @@ export interface TaskRow {
   // Solo lo rellena el Gantt de plantilla EDT (use-gantt-data); el de proyecto
   // usa startDate directo. Chany 29 may.
   startOffsetDays?: number;
+  // true si la barra es SUB-DÍA de verdad: inicio y fin con hora dentro del MISMO
+  // día. Solo entonces arrastrar/estirar trabaja por horas dentro de la jornada;
+  // una pieza con hora que cruza días se mueve/estira por días. Ausente → se
+  // deduce de `startOffsetDays` (compatibilidad con el Gantt de plantilla).
+  isSubDay?: boolean;
+  // true si el fin es un día SIN hora con la convención inclusiva
+  // (ScheduleGantt.inclusiveEndDate): la barra acaba al final de ese día y el
+  // tooltip muestra ese día como «Fin».
+  inclusiveEndDay?: boolean;
+  // Fecha fijada a mano (GanttTask.pinned): icono de chincheta en la lista y
+  // línea «Fecha fijada a mano» en el tooltip de la barra.
+  pinned?: boolean;
   days: number;
   // Ancho de la barra en días-CALENDARIO (solo modo calendario laboral del
   // Gantt de plantilla EDT). Cuando está presente manda sobre `days` para el
@@ -175,6 +187,9 @@ export interface GanttTask {
   barColor?: string | null;
   // Insignia de estado (punto + etiqueta) para la fila. La app la resuelve del estado.
   statusBadge?: { label: string; color: string } | null;
+  // Fecha fijada a mano por el usuario. Solo informativo: pinta una chincheta
+  // junto al nombre y lo dice en el tooltip de la barra. Ausente → nada.
+  pinned?: boolean;
 }
 
 export interface GanttGroup {

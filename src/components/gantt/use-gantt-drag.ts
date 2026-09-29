@@ -17,11 +17,18 @@ interface UseGanttDragInput {
 // Delta del drag en días-jornada. Filas por día: entero. Filas sub-día (con hora):
 // fraccionario, snapeado por hora (1/workdayHours). Mantiene el comportamiento
 // clásico (por día) para todo lo que no es sub-día → RefoTask sin cambios.
-function dragDelta(deltaX: number, pxPerDay: number, isSubDay: boolean, workdayHours: number): number {
+export function ganttDragDelta(deltaX: number, pxPerDay: number, isSubDay: boolean, workdayHours: number): number {
   if (!isSubDay) return Math.round(deltaX / pxPerDay);
   const wh = Math.max(1, workdayHours);
   const unit = pxPerDay / wh; // px por hora
   return Math.round(deltaX / unit) / wh;
+}
+
+// Sub-día = inicio y fin dentro del mismo día (TaskRow.isSubDay). Una pieza con
+// hora que cruza días se arrastra por días. Sin el campo (Gantt de plantilla),
+// cualquier fila con startOffsetDays sigue siendo sub-día, como antes.
+export function isSubDayRow(row: TaskRow): boolean {
+  return row.isSubDay ?? row.startOffsetDays != null;
 }
 
 interface UseGanttDragResult {
@@ -104,8 +111,8 @@ export function useGanttDrag(input: UseGanttDragInput): UseGanttDragResult {
       }
       const deltaX = current.currentX - current.startX;
       const row = rows.find(r => r.id === current.rowId);
-      const isSub = !!row && row.startOffsetDays != null;
-      const daysDelta = dragDelta(deltaX, pxPerDay, isSub, workdayHours);
+      const isSub = !!row && isSubDayRow(row);
+      const daysDelta = ganttDragDelta(deltaX, pxPerDay, isSub, workdayHours);
       if (row && Math.abs(daysDelta) > 1e-9) {
         if (current.kind === 'resize') {
           const newDays = Math.max(0, current.originalDays + daysDelta);
@@ -125,7 +132,7 @@ export function useGanttDrag(input: UseGanttDragInput): UseGanttDragResult {
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
     };
-  }, [dragState, pxPerDay, rows, onResizeCommit, onMoveCommit]);
+  }, [dragState, pxPerDay, rows, onResizeCommit, onMoveCommit, workdayHours]);
 
   let liveDelta = 0;
   let liveDays = 0;
@@ -133,8 +140,8 @@ export function useGanttDrag(input: UseGanttDragInput): UseGanttDragResult {
     const deltaX = dragState.currentX - dragState.startX;
     liveDelta = deltaX;
     const liveRow = rows.find(r => r.id === dragState.rowId);
-    const isSub = !!liveRow && liveRow.startOffsetDays != null;
-    const daysDelta = dragDelta(deltaX, pxPerDay, isSub, workdayHours);
+    const isSub = !!liveRow && isSubDayRow(liveRow);
+    const daysDelta = ganttDragDelta(deltaX, pxPerDay, isSub, workdayHours);
     if (dragState.kind === 'resize') {
       liveDays = Math.max(0, dragState.originalDays + daysDelta);
     } else {

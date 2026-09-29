@@ -1,9 +1,9 @@
 'use client';
 
 import { memo, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronDown, ChevronRight, Diamond, FolderTree, Pencil, Check, GripVertical, PanelLeftClose, PanelLeftOpen, CornerDownRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Diamond, FolderTree, Pencil, Check, GripVertical, PanelLeftClose, PanelLeftOpen, CornerDownRight, Pin } from 'lucide-react';
 import { COLORS, ROW_HEIGHT as DEFAULT_ROW_HEIGHT, HEADER_HEIGHT, LEFT_PANEL_WIDTH } from './constants';
-import { formatDurationShort, pickNaturalUnit, unitToDays } from './format-duration';
+import { HOURS_PER_DAY, formatDurationShort, pickNaturalUnit, unitToDays } from './format-duration';
 import type { TaskRow } from './types';
 
 interface TaskListProps {
@@ -44,6 +44,8 @@ interface TaskListProps {
   onStatusBadgeClick?: (rowId: string, event: ReactMouseEvent) => void;
   // Zoom vertical. Si no se pasa, usa el default global.
   rowHeight?: number;
+  // Horas de la jornada: cuántas horas son «1d» al mostrar y teclear duraciones.
+  workdayHours?: number;
   // Ancho del panel (px). Si no se pasa, usa LEFT_PANEL_WIDTH.
   width?: number;
   // Colapsar/expandir el panel "Estructura EDT".
@@ -168,14 +170,14 @@ interface EditState {
 // prevDays: duración anterior de la fila. Si el usuario escribe SOLO un número
 // (sin d/h/m), se interpreta en la unidad anterior (Chany 30 may): si antes era
 // "30m" y teclea "45", se entiende 45 minutos, no 45 días.
-function parseDurationInputLocal(input: string, prevDays?: number): number | null {
+function parseDurationInputLocal(input: string, prevDays?: number, hoursPerDay: number = HOURS_PER_DAY): number | null {
   const s = input.trim().toLowerCase().replace(',', '.');
   if (s.length === 0) return null;
   if (/^\d+(\.\d+)?$/.test(s)) {
     const n = parseFloat(s);
     if (!Number.isFinite(n) || n < 0) return null;
-    const unit = prevDays != null ? pickNaturalUnit(prevDays) : 'd';
-    return Math.round(unitToDays(n, unit) * 100000) / 100000;
+    const unit = prevDays != null ? pickNaturalUnit(prevDays, hoursPerDay) : 'd';
+    return Math.round(unitToDays(n, unit, hoursPerDay) * 100000) / 100000;
   }
   let totalDays = 0;
   let matched = false;
@@ -188,11 +190,11 @@ function parseDurationInputLocal(input: string, prevDays?: number): number | nul
     matched = true;
   }
   while ((m = hourRe.exec(s)) !== null) {
-    totalDays += parseFloat(m[1]) / 8;
+    totalDays += unitToDays(parseFloat(m[1]), 'h', hoursPerDay);
     matched = true;
   }
   while ((m = minRe.exec(s)) !== null) {
-    totalDays += parseFloat(m[1]) / (8 * 60);
+    totalDays += unitToDays(parseFloat(m[1]), 'm', hoursPerDay);
     matched = true;
   }
   // 5 decimales (no 2) para no corromper minutos: 30m=0.0625 → "29m" con 2 dec.
@@ -223,6 +225,7 @@ function TaskListImpl({
   onContextMenuRow,
   onStatusBadgeClick,
   rowHeight,
+  workdayHours = HOURS_PER_DAY,
   width,
   panelCollapsed = false,
   onToggleCollapsed,
@@ -266,7 +269,7 @@ function TaskListImpl({
         onCommitName(editingRow, value);
       }
     } else {
-      const parsed = parseDurationInputLocal(value, editingRow.days);
+      const parsed = parseDurationInputLocal(value, editingRow.days, workdayHours);
       if (parsed != null && parsed !== editingRow.days) {
         onCommitDuration(editingRow, parsed);
       }
@@ -672,6 +675,15 @@ function TaskListImpl({
                   >
                     {row.name}
                   </span>
+                  {row.pinned && (
+                    <span
+                      title="Fecha fijada a mano"
+                      aria-label="Fecha fijada a mano"
+                      style={{ display: 'inline-flex', flexShrink: 0, color: COLORS.textMuted }}
+                    >
+                      <Pin size={12} />
+                    </span>
+                  )}
                   {/* Insignia de estado (VelziaCAD): punto de color + etiqueta corta.
                       Con `onStatusBadgeClick` se pinta como BOTÓN para que la app abra
                       ahí su selector de estado; sin la prop sigue siendo el <span>
@@ -836,7 +848,7 @@ function TaskListImpl({
                           // optimista en onCommitDuration. Chany 31 may.
                           if (!canEdit) return;
                           e.stopPropagation();
-                          setEdit({ rowId: row.id, field: 'duration', value: formatDurationShort(row.days) });
+                          setEdit({ rowId: row.id, field: 'duration', value: formatDurationShort(row.days, workdayHours) });
                         }}
                         onDoubleClick={e => {
                           // Evita que el doble click sobre la celda abra además el
@@ -846,7 +858,7 @@ function TaskListImpl({
                         }}
                         title={canEdit ? 'Click para editar la duración (Enter para guardar)' : undefined}
                       >
-                        {formatDurationShort(row.days)}
+                        {formatDurationShort(row.days, workdayHours)}
                       </span>
                     )
                   ) : row.kind === 'pre-activity' ? (

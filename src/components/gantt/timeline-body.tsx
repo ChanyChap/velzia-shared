@@ -7,6 +7,7 @@ import type { GanttDependency, TaskRow, DragState } from './types';
 import type { GanttLayout } from './use-gantt-layout';
 import { ArrowMarkers, GanttDependencyArrow, type RowObstacle } from './gantt-dependency-arrow';
 import { GanttBar } from './gantt-bar';
+import { ganttDragDelta, isSubDayRow } from './use-gantt-drag';
 import { TimelineHeader } from './timeline-header';
 import type { BaselineBar } from './use-baseline-render';
 import type { BarSide, DepDragState, DepDropTarget } from './use-dep-drag';
@@ -90,6 +91,10 @@ interface TimelineBodyProps {
   // día + zoom alto) y los tooltips de barra muestran la hora real. Sin él, el
   // body se comporta exactamente como antes (degradación elegante).
   calendar?: WorkingCalendar | null;
+  // Jornada (hora de inicio y horas) con la que se posicionan las barras con
+  // hora. La usa la previsualización del estirado sub-día y el tooltip de la barra.
+  workdayStartHour?: number;
+  workdayHours?: number;
   // Marcadores verticales (p.ej. fechas contractuales): línea + etiqueta opcional.
   markers?: Array<{ date: Date; label?: string; color?: string }>;
   // Scroll vertical actual del contenedor. Se usa para "fijar" la cabecera de
@@ -127,6 +132,8 @@ function TimelineBodyImpl({
   onContextMenuRow,
   animateAllBars = false,
   calendar,
+  workdayStartHour = 8,
+  workdayHours = 8,
   markers = [],
   scrollTop = 0,
 }: TimelineBodyProps) {
@@ -361,7 +368,8 @@ function TimelineBodyImpl({
       let dragDelta = 0;
       if (dragState && dragState.rowId === row.id) {
         if (dragState.kind === 'resize') {
-          const days = Math.max(0, dragState.originalDays + Math.round(dragDeltaX / pxPerDay));
+          // Mismo paso que al soltar (useGanttDrag): por hora en las sub-día, por día en el resto.
+          const days = Math.max(0, dragState.originalDays + ganttDragDelta(dragDeltaX, pxPerDay, isSubDayRow(row), workdayHours));
           rect = barRectFor(idx, row.startDate, days);
         } else {
           dragDelta = dragDeltaX;
@@ -625,6 +633,8 @@ function TimelineBodyImpl({
             dragDeltaX={dragDelta}
             animateMove={animateAllBars && dragState === null}
             calendar={calendar}
+            workdayStartHour={workdayStartHour}
+            workdayHours={workdayHours}
             rightLinePad={rightLineRowIds.has(row.id) ? DEPENDENCY_OFFSET + 6 : 0}
           />
         ))}
@@ -653,6 +663,8 @@ function TimelineBodyImpl({
                 dragDeltaX={dragDelta}
                 animateMove={animateAllBars && dragState === null}
                 calendar={calendar}
+                workdayStartHour={workdayStartHour}
+                workdayHours={workdayHours}
               />
             ) : null,
           )}
@@ -708,6 +720,8 @@ function TimelineBodyImpl({
                 dragDeltaX={dragDelta}
                 animateMove={animateAllBars && dragState === null}
                 calendar={calendar}
+                workdayStartHour={workdayStartHour}
+                workdayHours={workdayHours}
               />
             ) : null,
           )}

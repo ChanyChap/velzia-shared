@@ -12,7 +12,7 @@
  * decide qué hacer con los changes (batch UPDATE o descarte si ciclo).
  */
 
-import { addDays, differenceInCalendarDays, parseISO } from 'date-fns';
+import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import type { GanttTask as Tarea, GanttDep as TaskDependency } from './types';
 
 export interface DateChange {
@@ -27,23 +27,40 @@ export interface PropagateResult {
   cycleTaskIds: string[];
 }
 
+export interface PropagateOptions {
+  // Misma convención que ScheduleGantt.inclusiveEndDate: un `end_date` SIN hora
+  // es el ÚLTIMO día incluido. Internamente se calcula con fin exclusivo (día
+  // siguiente) y el `end` devuelto vuelve a ser el último día incluido.
+  inclusiveEndDate?: boolean;
+}
+
 interface Scheduled { start: Date; end: Date; }
 
-const toISO = (d: Date): string => d.toISOString().slice(0, 10);
+// format de date-fns (hora LOCAL): toISOString() pasa a UTC y, en Europe/Madrid,
+// la medianoche local cae en el día anterior.
+const toISO = (d: Date): string => format(d, 'yyyy-MM-dd');
 
-function durationOf(t: Tarea): number {
+const isDateOnly = (iso: string): boolean => !iso.includes('T');
+
+// Fin EXCLUSIVO (instante en que termina) con el que opera el algoritmo.
+function exclusiveEnd(endISO: string, inclusive: boolean): Date {
+  const d = parseISO(endISO);
+  return inclusive && isDateOnly(endISO) ? addDays(d, 1) : d;
+}
+
+function durationOf(t: Tarea, inclusive: boolean): number {
   if (typeof t.duration_days === 'number' && t.duration_days > 0) return t.duration_days;
   if (t.start_date && t.end_date) {
-    const diff = differenceInCalendarDays(parseISO(t.end_date), parseISO(t.start_date));
+    const diff = differenceInCalendarDays(exclusiveEnd(t.end_date, inclusive), parseISO(t.start_date));
     if (diff > 0) return diff;
   }
   return 1;
 }
 
-function currentDates(t: Tarea): Scheduled | null {
+function currentDates(t: Tarea, inclusive: boolean): Scheduled | null {
   if (!t.start_date) return null;
   const start = parseISO(t.start_date);
-  const end = t.end_date ? parseISO(t.end_date) : addDays(start, durationOf(t));
+  const end = t.end_date ? exclusiveEnd(t.end_date, inclusive) : addDays(start, durationOf(t, inclusive));
   return { start, end };
 }
 
@@ -51,7 +68,12 @@ export function propagateTaskDates(
   seedTaskId: string,
   tasks: Tarea[],
   deps: TaskDependency[],
+  options: PropagateOptions = {},
 ): PropagateResult {
+  const inclusive = !!options.inclusiveEndDate;
+  // Fin que se devuelve: con la convención inclusiva, el último día incluido.
+  const endToISO = (end: Date, t: Tarea): string =>
+    inclusive && (!t.end_date || isDateOnly(t.end_date)) ? toISO(addDays(end, -1)) : toISO(end);
   const byId = new Map<string, Tarea>(tasks.map(t => [t.id, t]));
   if (!byId.has(seedTaskId)) {
     return { changes: [], cycleDetected: false, cycleTaskIds: [] };
@@ -84,7 +106,7 @@ export function propagateTaskDates(
   const scheduled = new Map<string, Scheduled>();
   for (const t of tasks) {
     if (reachable.has(t.id)) continue;
-    const c = currentDates(t);
+    const c = currentDates(t, inclusive);
     if (c) scheduled.set(t.id, c);
   }
 
@@ -103,8 +125,8 @@ export function propagateTaskDates(
       const task = byId.get(tid);
       if (!task) { remaining.delete(tid); continue; }
 
-      const dur = durationOf(task);
-      const original = currentDates(task);
+      const dur = durationOf(task, inclusive);
+      const original = currentDates(task, inclusive);
 
       let newStart: Date | null = null;
       let newEnd: Date | null = null;
@@ -162,17 +184,17 @@ export function propagateTaskDates(
     if (!scheduled.has(tid)) continue;
     const task = byId.get(tid);
     if (!task) continue;
-    const original = currentDates(task);
+    const original = currentDates(task, inclusive);
     const next = scheduled.get(tid) as Scheduled;
     if (!original) {
-      changes.push({ taskId: tid, start: toISO(next.start), end: toISO(next.end) });
+      changes.push({ taskId: tid, start: toISO(next.start), end: endToISO(next.end, task) });
       continue;
     }
     if (
       next.start.getTime() !== original.start.getTime() ||
       next.end.getTime() !== original.end.getTime()
     ) {
-      changes.push({ taskId: tid, start: toISO(next.start), end: toISO(next.end) });
+      changes.push({ taskId: tid, start: toISO(next.start), end: endToISO(next.end, task) });
     }
   }
 

@@ -3,7 +3,8 @@
  * automáticamente la unidad para evitar decimales. Se usa en las cápsulas del
  * Gantt, la tabla izquierda (task-list) y el modal de actividad.
  *
- * Convención: 1 día laborable = 8 horas; 1 hora = 60 minutos.
+ * Convención: 1 día laborable = `hoursPerDay` horas (la jornada que recibe el
+ * Gantt; 8 por defecto); 1 hora = 60 minutos.
  *
  * Reglas (Chany 29 may): mostrar d (días), h (horas) y m (minutos) combinando
  * lo justo para que no aparezcan decimales. Ejemplos:
@@ -17,10 +18,15 @@
  */
 export const HOURS_PER_DAY = 8;
 const MIN_PER_HOUR = 60;
-const MIN_PER_DAY = HOURS_PER_DAY * MIN_PER_HOUR; // 480
 
-export function formatDurationShort(days: number): string {
+function minPerDay(hoursPerDay: number): number {
+  const h = Number.isFinite(hoursPerDay) && hoursPerDay > 0 ? hoursPerDay : HOURS_PER_DAY;
+  return h * MIN_PER_HOUR;
+}
+
+export function formatDurationShort(days: number, hoursPerDay: number = HOURS_PER_DAY): string {
   if (!Number.isFinite(days) || days === 0) return '0';
+  const MIN_PER_DAY = minPerDay(hoursPerDay);
   const sign = days < 0 ? '-' : '';
   let totalMin = Math.round(Math.abs(days) * MIN_PER_DAY);
   if (totalMin === 0) return '0';
@@ -40,24 +46,27 @@ export function formatDurationShort(days: number): string {
 export type DurationUnit = 'd' | 'h' | 'm';
 
 // Convierte un valor expresado en la unidad indicada a días (interno).
-export function unitToDays(value: number, unit: DurationUnit): number {
-  if (unit === 'h') return value / HOURS_PER_DAY;
+export function unitToDays(value: number, unit: DurationUnit, hoursPerDay: number = HOURS_PER_DAY): number {
+  const MIN_PER_DAY = minPerDay(hoursPerDay);
+  if (unit === 'h') return value / (MIN_PER_DAY / MIN_PER_HOUR);
   if (unit === 'm') return value / MIN_PER_DAY;
   return value;
 }
 
 // Convierte días a valor en la unidad indicada (para precargar inputs).
-export function daysToUnit(days: number, unit: DurationUnit): number {
+export function daysToUnit(days: number, unit: DurationUnit, hoursPerDay: number = HOURS_PER_DAY): number {
+  const MIN_PER_DAY = minPerDay(hoursPerDay);
   // Redondeo a 3 decimales (no 2) para no perder precisión al precargar inputs.
-  if (unit === 'h') return Math.round(days * HOURS_PER_DAY * 1000) / 1000;
+  if (unit === 'h') return Math.round(days * (MIN_PER_DAY / MIN_PER_HOUR) * 1000) / 1000;
   if (unit === 'm') return Math.round(days * MIN_PER_DAY);
   return Math.round(days * 1000) / 1000;
 }
 
 // Elige la unidad más natural para una duración en días, evitando decimales:
 // si es múltiplo de día → 'd'; si es múltiplo de hora → 'h'; si no → 'm'.
-export function pickNaturalUnit(days: number): DurationUnit {
+export function pickNaturalUnit(days: number, hoursPerDay: number = HOURS_PER_DAY): DurationUnit {
   if (!Number.isFinite(days) || days <= 0) return 'd';
+  const MIN_PER_DAY = minPerDay(hoursPerDay);
   const totalMin = Math.round(days * MIN_PER_DAY);
   if (totalMin % MIN_PER_DAY === 0) return 'd';
   if (totalMin % MIN_PER_HOUR === 0) return 'h';

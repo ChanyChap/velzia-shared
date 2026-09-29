@@ -63,6 +63,10 @@ interface GanttBarProps {
   // líneas de dependencia saliendo/llegando por el lado derecho de la barra, para
   // que las líneas no se solapen con el texto. 0 si no hay líneas a la derecha.
   rightLinePad?: number;
+  // Jornada con la que se posicionan las barras con hora: el tooltip calcula el
+  // fin como inicio + days × jornada (no horas reales de 24 h). Default 8:00 y 8 h.
+  workdayStartHour?: number;
+  workdayHours?: number;
 }
 
 // Aclara un hex hacia el blanco (amt 0..1). Se usa para el FONDO de la barra con
@@ -150,6 +154,8 @@ function GanttBarImpl({
   animateMove = false,
   calendar,
   rightLinePad = 0,
+  workdayStartHour = 8,
+  workdayHours = 8,
 }: GanttBarProps) {
   // Dónde se pulsó la cápsula. Un arrastre para cambiar la fecha termina también
   // en un `click` del navegador, y avisar de él como si fuera un clic haría que
@@ -242,14 +248,36 @@ function GanttBarImpl({
     // Mostramos SIEMPRE la hora de inicio y fin en el hover (petición de Chany):
     // además de la fecha, la hora exacta de comienzo y final de la actividad.
     const dateFmt = "dd/MM/yyyy HH:mm";
-    const startStr = format(row.startDate, dateFmt, { locale: es });
-    // Fin real: el span en días-CALENDARIO (widthDays) cubre findes/festivos
-    // cruzados; si no, la duración abstracta `days`. Sumamos milisegundos en vez
-    // de addDays (que TRUNCA la fracción de día) para conservar la hora de fin
-    // exacta cuando la actividad cruza la medianoche (Chany 31 may).
-    const spanForEnd = Math.max(0, row.widthDays ?? row.days);
-    const endDate = new Date(row.startDate.getTime() + spanForEnd * MS_PER_DAY);
-    const endStr = format(endDate, dateFmt, { locale: es });
+    // Fin inclusivo sin hora: la barra acaba al final de su último día, así que
+    // se enseñan días (sin una hora 00:00 que no significa nada).
+    const dayOnly = !!row.inclusiveEndDay && row.startOffsetDays == null;
+    const startStr = format(row.startDate, dayOnly ? 'dd/MM/yyyy' : dateFmt, { locale: es });
+    let endStr: string;
+    if (row.inclusiveEndDay && row.plannedEndDate) {
+      endStr = format(row.plannedEndDate, 'dd/MM/yyyy', { locale: es });
+    } else if (row.startOffsetDays != null && row.widthDays == null) {
+      // Con hora, `days` son días de JORNADA: fin = inicio + days × jornada,
+      // repartido por días (lo que no cabe en la jornada pasa al día siguiente).
+      const wdMin = Math.max(1, workdayHours) * 60;
+      const startMin = row.startDate.getHours() * 60 + row.startDate.getMinutes();
+      const startFrac = Math.min(1, Math.max(0, (startMin - workdayStartHour * 60) / wdMin));
+      const endOffset = startFrac + Math.max(0, row.days);
+      const extraDays = endOffset > 0 ? Math.ceil(endOffset - 1e-9) - 1 : 0;
+      const endFrac = endOffset - extraDays;
+      const startDay = new Date(row.startDate);
+      startDay.setHours(0, 0, 0, 0);
+      const endDay = addDays(startDay, extraDays);
+      endDay.setMinutes(Math.round(workdayStartHour * 60 + endFrac * wdMin));
+      endStr = format(endDay, dateFmt, { locale: es });
+    } else {
+      // Fin real: el span en días-CALENDARIO (widthDays) cubre findes/festivos
+      // cruzados; si no, la duración abstracta `days`. Sumamos milisegundos en vez
+      // de addDays (que TRUNCA la fracción de día) para conservar la hora de fin
+      // exacta cuando la actividad cruza la medianoche (Chany 31 may).
+      const spanForEnd = Math.max(0, row.widthDays ?? row.days);
+      const endDate = new Date(row.startDate.getTime() + spanForEnd * MS_PER_DAY);
+      endStr = format(endDate, dateFmt, { locale: es });
+    }
     const lines: string[] = [];
     lines.push(row.name);
     lines.push(''); // separador
@@ -257,8 +285,9 @@ function GanttBarImpl({
       lines.push(`Hito · ${startStr}`);
     } else {
       lines.push(`Inicio: ${startStr}    Fin: ${endStr}`);
-      lines.push(`Duración: ${formatDurationShort(row.days)}`);
+      lines.push(`Duración: ${formatDurationShort(row.days, workdayHours)}`);
     }
+    if (row.pinned) lines.push('Fecha fijada a mano');
     if (typeof row.progress === 'number' && row.progress > 0) {
       lines.push(`Progreso: ${Math.round(row.progress)}%`);
     }
@@ -287,7 +316,7 @@ function GanttBarImpl({
       }
     }
     return lines.join('\n');
-  }, [row, calendar]);
+  }, [row, calendar, workdayStartHour, workdayHours]);
 
   const showHandles = showDepHandles && !!row.activityId && row.kind === 'activity';
 
@@ -452,7 +481,7 @@ function GanttBarImpl({
   // Etiqueta de duración dentro de la barra. Usamos formatDurationShort para
   // que actividades con duración < 1 día se muestren en HORAS (ej "1h", "4h")
   // igual que la lista de la izquierda — antes salía "0d" en estos casos.
-  const formattedDuration = formatDurationShort(row.days);
+  const formattedDuration = formatDurationShort(row.days, workdayHours);
   const durationLabel = row.isCollapsedRollup
     ? `~${formattedDuration}`
     : formattedDuration;
