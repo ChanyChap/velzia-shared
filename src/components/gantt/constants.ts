@@ -64,10 +64,31 @@ export const COLORS = {
   gridDay: '#f1f5f9',
   gridWeek: '#cbd5e1',
   gridMonth: '#94a3b8',
-  todayLine: '#ef4444',
+  // Mismo azul y mismos puntos gruesos que la línea de HOY de los
+  // planificadores de VelziaCAD (linea-hoy.tsx): una sola marca de «hoy» en
+  // todas las pantallas de planificación (Chany 6-oct-2026).
+  todayLine: '#2563eb',
   text: '#0f172a',
   textMuted: '#64748b',
   selection: '#fde68a',
+} as const;
+
+// Línea de HOY: puntos redondos de 6 px cada 11 px (= linea-hoy.tsx de VelziaCAD).
+export const TODAY_DOT_DIAMETER = 6;
+export const TODAY_DOT_STEP = 11;
+
+// Cabecera de fechas con el estilo del planificador simplificado de VelziaCAD
+// (FilaMeses + EtiquetaDiaRelativo de cabecera-dias.tsx), en colores Tailwind.
+export const HEADER_STYLE = {
+  monthBg: '#f8fafc', // slate-50
+  monthText: '#334155', // slate-700
+  border: '#e2e8f0', // slate-200
+  dayText: '#64748b', // muted
+  nonWorkingBg: '#e2e8f0', // slate-200
+  nonWorkingText: '#475569', // slate-600
+  todayBg: '#e0e7ff', // indigo-100
+  todayText: '#4338ca', // indigo-700
+  relativeText: '#64748b', // slate-500
 } as const;
 
 // Stub horizontal base de las flechas de dependencia antes de girar al tramo

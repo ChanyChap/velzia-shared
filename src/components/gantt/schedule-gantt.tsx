@@ -32,7 +32,7 @@ import { useRowDrag } from './use-row-drag';
 import { useZoomPersistence } from './use-zoom-persistence';
 import { computeCpm, type CpmActivity, type CpmDependency } from './cpm-engine';
 import { propagateTaskDates } from './propagate-task-dates';
-import { LEFT_PANEL_WIDTH, ANCHOR_DATE } from './constants';
+import { LEFT_PANEL_WIDTH, ANCHOR_DATE, COLORS, TODAY_DOT_DIAMETER, TODAY_DOT_STEP } from './constants';
 import type { WorkingCalendar } from './working-calendar';
 import { useResizableColumn } from './use-resizable-column';
 import { formatDurationShort } from './format-duration';
@@ -330,6 +330,7 @@ export function ScheduleGantt({
   const [hoverRowId, setHoverRowId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [scrollTop, setScrollTop] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
   const bodyWrapperRef = useRef<HTMLDivElement | null>(null);
   // Host del listener de rueda no-passive (ver useEffect abajo). React 18 hace
   // el evento wheel passive y e.preventDefault() sería un no-op. Chany 31 may.
@@ -1537,6 +1538,7 @@ export function ScheduleGantt({
 
   const onWrapperScroll: UIEventHandler<HTMLDivElement> = e => {
     setScrollTop(e.currentTarget.scrollTop);
+    setScrollLeft(e.currentTarget.scrollLeft);
   };
 
   // Mismos handlers que el Gantt EDT: HOY centra el scroll, Ajustar calcula
@@ -1710,6 +1712,21 @@ export function ScheduleGantt({
               {item.label}
             </span>
           ))}
+          {/* La línea de puntos azules es HOY en todas las pantallas de
+              planificación, y cada una lo dice en su leyenda (Chany 6-oct-2026). */}
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden
+              className="inline-block h-4"
+              style={{
+                width: TODAY_DOT_DIAMETER,
+                backgroundImage: `radial-gradient(circle, ${COLORS.todayLine} ${TODAY_DOT_DIAMETER / 2 - 0.5}px, transparent ${TODAY_DOT_DIAMETER / 2}px)`,
+                backgroundSize: `${TODAY_DOT_DIAMETER}px ${TODAY_DOT_STEP}px`,
+                backgroundRepeat: 'repeat-y',
+              }}
+            />
+            Hoy
+          </span>
         </div>
       </div>
 
@@ -1883,6 +1900,7 @@ export function ScheduleGantt({
             onMoveStart={drag.beginMove}
             animateAllBars={tasksRecentlyAnimated.size > 0}
             scrollTop={scrollTop}
+            scrollLeft={scrollLeft}
             calendar={calendar ?? undefined}
             workdayStartHour={workdayStartHour}
             workdayHours={workdayHours}

@@ -2,7 +2,10 @@
 
 import { memo, useMemo, useCallback, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { addDays, isMonday, isWeekend } from 'date-fns';
-import { BAR_HEIGHT, COLORS, HEADER_HEIGHT, PROJECT_START_COLOR, DEPENDENCY_OFFSET } from './constants';
+import {
+  BAR_HEIGHT, COLORS, HEADER_HEIGHT, PROJECT_START_COLOR, DEPENDENCY_OFFSET,
+  TODAY_DOT_DIAMETER, TODAY_DOT_STEP,
+} from './constants';
 import type { GanttDependency, TaskRow, DragState } from './types';
 import type { GanttLayout } from './use-gantt-layout';
 import { ArrowMarkers, GanttDependencyArrow, type RowObstacle } from './gantt-dependency-arrow';
@@ -101,6 +104,9 @@ interface TimelineBodyProps {
   // fechas: el grupo del header se traslada en Y por scrollTop para quedar
   // siempre pegado al borde superior visible aunque se haga scroll hacia abajo.
   scrollTop?: number;
+  // Scroll horizontal: el rótulo del mes de la cabecera se desliza con él para
+  // que siempre se lea el mes que se está viendo.
+  scrollLeft?: number;
 }
 
 function TimelineBodyImpl({
@@ -136,6 +142,7 @@ function TimelineBodyImpl({
   workdayHours = 8,
   markers = [],
   scrollTop = 0,
+  scrollLeft = 0,
 }: TimelineBodyProps) {
   const { totalWidth, totalHeight, xOf, barRectFor, totalDays, startDate, pxPerDay, rowHeight: ROW_HEIGHT } = layout;
 
@@ -511,8 +518,9 @@ function TimelineBodyImpl({
             y1={0}
             y2={totalHeight}
             stroke={COLORS.todayLine}
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
+            strokeWidth={TODAY_DOT_DIAMETER}
+            strokeLinecap="round"
+            strokeDasharray={`0 ${TODAY_DOT_STEP}`}
             pointerEvents="none"
           />
         )}
@@ -809,6 +817,7 @@ function TimelineBodyImpl({
           projectStart={projectStartDate}
           today={today}
           calendar={calendar}
+          scrollLeft={scrollLeft}
         />
       </g>
     </svg>
