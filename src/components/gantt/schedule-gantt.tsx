@@ -21,7 +21,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '../ui/dialog';
-import { AlertTriangle, CheckCircle2, Clock, ArrowDownToLine, ChevronsUp, ChevronsDown, Settings2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, ArrowDownToLine, ChevronsUp, ChevronsDown, Settings2, GitBranch } from 'lucide-react';
 import { Button } from '../ui/button';
 import { MoveBelowDialog } from './move-below-dialog';
 import { useGanttLayout } from './use-gantt-layout';
@@ -35,6 +35,7 @@ import { propagateTaskDates } from './propagate-task-dates';
 import { LEFT_PANEL_WIDTH, ANCHOR_DATE, COLORS, TODAY_DOT_DIAMETER, TODAY_DOT_STEP } from './constants';
 import type { WorkingCalendar } from './working-calendar';
 import { useResizableColumn } from './use-resizable-column';
+import { usePersistentState } from './use-persistent-state';
 import { formatDurationShort } from './format-duration';
 import { useToast } from '../../hooks/use-toast';
 import { normalizeText } from '../../lib/utils';
@@ -179,6 +180,8 @@ export interface ScheduleGanttProps {
    */
   forcedCompletedBy?: Map<string, { name: string | null; at: string | null }>;
 }
+
+const NO_DEPS: GanttDependency[] = [];
 
 // Encuentra el día más temprano entre todas las tareas. Si no hay fechas,
 // usa hoy. Lo usamos como punto de referencia para construir las posiciones
@@ -1211,6 +1214,11 @@ export function ScheduleGantt({
   // Borradas optimistamente — desaparecen al instante.
   const [removedDepIds, setRemovedDepIds] = useState<Set<string>>(new Set());
 
+  // Interruptor «Dependencias» de la toolbar (Chany, 6-oct-2026: «las
+  // dependencias se deben poder ocultar»). Ocultas, tampoco se ofrecen los
+  // puntos para crear una nueva: se crearía una flecha que no se ve.
+  const [showDependencies, setShowDependencies] = usePersistentState<boolean>('gantt:ver-dependencias', true);
+
   // Mezcla deps reales + optimistas, descartando la optimista en cuanto existe
   // la real equivalente y ocultando las borradas optimistamente.
   const renderedDeps = useMemo<GanttDependency[]>(() => {
@@ -1759,6 +1767,22 @@ export function ScheduleGantt({
         isFullscreen={isFullscreen}
         onOpenCalendar={onOpenCalendar}
         extraActions={
+          <>
+          <Button
+            variant={showDependencies ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 px-2 text-xs gap-1"
+            onClick={() => { setSelectedDepId(null); setShowDependencies(!showDependencies); }}
+            aria-pressed={showDependencies}
+            title={
+              showDependencies
+                ? 'Se ven las flechas entre actividades que dependen una de otra. Pulsa para ocultarlas.'
+                : 'Mostrar las flechas entre actividades que dependen una de otra'
+            }
+          >
+            <GitBranch className="h-3.5 w-3.5" />
+            Dependencias
+          </Button>
           <BaselineMenu
             baselines={baselines}
             shownBaselineId={shownBaselineId}
@@ -1771,6 +1795,7 @@ export function ScheduleGantt({
             // solo enviamos nombre/notas, así que devolvemos un snapshot vacío.
             buildSnapshot={() => ({ snapshot: { activities: [], dependencies: [] }, totalDurationDays: 0 })}
           />
+          </>
         }
         filterLabel={activeFilterCount > 0 ? `Filtros (${activeFilterCount})` : 'Filtros'}
         filterControls={(
@@ -1874,7 +1899,7 @@ export function ScheduleGantt({
         >
           <TimelineBody
             rows={displayedRows}
-            dependencies={renderedDeps}
+            dependencies={showDependencies ? renderedDeps : NO_DEPS}
             layout={layout}
             viewMode={viewMode}
             selectedRowIds={selectedRowIds}
@@ -1887,7 +1912,7 @@ export function ScheduleGantt({
             depDragState={depDrag.dragState}
             depHoverTarget={depDrag.hoverTarget}
             onDepHoverChange={depDrag.setHover}
-            onBeginDepDrag={canEdit ? depDrag.beginFromHandle : undefined}
+            onBeginDepDrag={canEdit && showDependencies ? depDrag.beginFromHandle : undefined}
             onClickDep={(id) => { setSelectedDepId(id); setSelectedRowIds(new Set()); }}
             onDoubleClickDep={canEdit ? setEditingDepId : undefined}
             selectedDepId={selectedDepId || editingDepId}
