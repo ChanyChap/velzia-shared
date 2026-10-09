@@ -33,7 +33,7 @@ import { useZoomPersistence } from './use-zoom-persistence';
 import { computeCpm, type CpmActivity, type CpmDependency } from './cpm-engine';
 import { propagateTaskDates } from './propagate-task-dates';
 import { LEFT_PANEL_WIDTH, ANCHOR_DATE, COLORS, TODAY_DOT_DIAMETER, TODAY_DOT_STEP } from './constants';
-import type { WorkingCalendar } from './working-calendar';
+import { addWorkingDays, countWorkingDays, nextWorkingDate, type WorkingCalendar } from './working-calendar';
 import { useResizableColumn } from './use-resizable-column';
 import { usePersistentState } from './use-persistent-state';
 import { formatDurationShort } from './format-duration';
@@ -246,6 +246,50 @@ function isSameDaySubDay(t: Tarea, inclusiveEndDate: boolean): boolean {
 // Desplaza la FECHA de un ISO N días conservando tal cual su parte horaria.
 function shiftDateKeepingTime(iso: string, days: number): string {
   return format(addDays(parseISO(iso.slice(0, 10)), days), 'yyyy-MM-dd') + iso.slice(10);
+}
+
+// Mover una barra por DÍAS HÁBILES del calendario (Chany, 9-oct-2026): el
+// inicio se desplaza `dDelta` días naturales (lo que el usuario arrastró) y cae
+// en el siguiente hábil; la tarea conserva los hábiles que tenía, saltando
+// findes y festivos, y no los días naturales (una tarea lun→vie movida al jueves
+// acaba el miércoles siguiente, no el lunes). La hora del día se conserva.
+// `workingDelta` es el desplazamiento del inicio en hábiles, que es lo que
+// tiene que sumar el lag si el usuario elige ajustar el de la predecesora.
+function moveByWorkingDays(
+  t: Tarea,
+  dDelta: number,
+  cal: WorkingCalendar,
+  inclusiveEndDate: boolean,
+): { startISO: string; endISO: string; workingDelta: number } {
+  const startISOraw = t.start_date as string;
+  const oldStartDay = parseISO(startISOraw.slice(0, 10));
+  const newStartDay = nextWorkingDate(cal, addDays(oldStartDay, dDelta));
+  const startISO = format(newStartDay, 'yyyy-MM-dd') + startISOraw.slice(10);
+
+  // Hábiles que ocupaba, contando el último día con la misma convención de fin
+  // que pinta la barra: sin hora, el fin inclusivo ES el último día y el
+  // exclusivo es el día siguiente; con hora, ese día se trabaja salvo que sea
+  // medianoche (instante en que empieza el día, o sea, fin exclusivo).
+  let workingDays: number;
+  let lastIsEndDay: boolean;
+  let endTime = '';
+  if (t.end_date) {
+    const endDay = parseISO(t.end_date.slice(0, 10));
+    endTime = t.end_date.slice(10);
+    lastIsEndDay = hasTime(t.end_date) ? !/^T00:00/.test(endTime) : inclusiveEndDate;
+    const lastDay = lastIsEndDay ? endDay : addDays(endDay, -1);
+    workingDays = countWorkingDays(cal, oldStartDay, addDays(lastDay, 1));
+  } else {
+    lastIsEndDay = inclusiveEndDate;
+    workingDays = Math.ceil(Math.max(1, Number(t.duration_days) || 1));
+  }
+  workingDays = Math.max(1, workingDays);
+
+  const newLastDay = addWorkingDays(cal, newStartDay, workingDays - 1);
+  const endISO = format(lastIsEndDay ? newLastDay : addDays(newLastDay, 1), 'yyyy-MM-dd') + endTime;
+
+  const workingDelta = countWorkingDays(cal, nextWorkingDate(cal, oldStartDay), newStartDay);
+  return { startISO, endISO, workingDelta };
 }
 
 function dayOffset(date: Date, reference: Date): number {
@@ -1171,6 +1215,19 @@ export function ScheduleGantt({
       // desplaza y la hora, si la hay, se conserva. Fechas en hora LOCAL.
       const dDelta = Math.round(daysDelta);
       if (dDelta === 0) return;
+      if (calendar) {
+        const moved = moveByWorkingDays(tarea, dDelta, calendar, inclusiveEndDate);
+        // Arrastrar a un finde que devuelve al mismo hábil no es un movimiento.
+        if (moved.startISO === tarea.start_date && moved.endISO === tarea.end_date) return;
+        const incomingCal = dependencies.find(d => d.successor_id === row.activityId);
+        if (incomingCal) {
+          // El lag se mide en hábiles: propagateTaskDates también los cuenta así.
+          setMoveConflict({ taskId: row.activityId, daysDelta: moved.workingDelta, startISO: moved.startISO, endISO: moved.endISO, predDepId: incomingCal.id });
+          return;
+        }
+        await applyMoveDates(row.activityId, moved.startISO, moved.endISO);
+        return;
+      }
       const startISO = shiftDateKeepingTime(tarea.start_date, dDelta);
       let endISO: string;
       if (tarea.end_date) {
@@ -1191,7 +1248,7 @@ export function ScheduleGantt({
       }
       await applyMoveDates(row.activityId, startISO, endISO);
     },
-    [tareas, dependencies, applyMoveDates, inclusiveEndDate, workdayStartHour, workdayHours],
+    [tareas, dependencies, applyMoveDates, inclusiveEndDate, workdayStartHour, workdayHours, calendar],
   );
 
   const drag = useGanttDrag({
@@ -1263,7 +1320,7 @@ export function ScheduleGantt({
   // no persiste nada. Si hay changes, batch UPDATE de tareas + flag animado.
   const applyDatePropagation = useCallback(
     async (seedTaskId: string, depsAfter: TaskDependency[]): Promise<void> => {
-      const result = propagateTaskDates(seedTaskId, tareas, depsAfter, { inclusiveEndDate });
+      const result = propagateTaskDates(seedTaskId, tareas, depsAfter, { inclusiveEndDate, calendar });
       if (result.cycleDetected) {
         toast({
           title: 'Dependencia rechazada: crearía un ciclo',
@@ -1285,7 +1342,7 @@ export function ScheduleGantt({
       }
       flagAnimatedTasks(result.changes.map(c => c.taskId));
     },
-    [tareas, toast, flagAnimatedTasks, port, inclusiveEndDate],
+    [tareas, toast, flagAnimatedTasks, port, inclusiveEndDate, calendar],
   );
 
   // Diálogo #18 — Opción 1: ajustar el lag de la dependencia entrante

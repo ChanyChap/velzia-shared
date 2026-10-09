@@ -14,6 +14,7 @@
 
 import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import type { GanttTask as Tarea, GanttDep as TaskDependency } from './types';
+import { addWorkingDays, countWorkingDays, nextWorkingDate, type WorkingCalendar } from './working-calendar';
 
 export interface DateChange {
   taskId: string;
@@ -32,6 +33,10 @@ export interface PropagateOptions {
   // es el ÚLTIMO día incluido. Internamente se calcula con fin exclusivo (día
   // siguiente) y el `end` devuelto vuelve a ser el último día incluido.
   inclusiveEndDate?: boolean;
+  // Calendario del Gantt. Si viene, lag y duración se cuentan en días HÁBILES
+  // (Chany, 9-oct-2026): una sucesora FS no arranca en sábado y una tarea de 5
+  // días no se queda en 3 hábiles por cruzar un finde. Sin él, días naturales.
+  calendar?: WorkingCalendar | null;
 }
 
 interface Scheduled { start: Date; end: Date; }
@@ -57,6 +62,19 @@ function durationOf(t: Tarea, inclusive: boolean): number {
   return 1;
 }
 
+// Días HÁBILES que ocupa la tarea según sus fechas actuales. Un fin con hora
+// (que no sea medianoche) cuenta su propio día: ese día se trabaja.
+function workingDurationOf(t: Tarea, inclusive: boolean, cal: WorkingCalendar): number {
+  if (t.start_date && t.end_date) {
+    const endExcl = exclusiveEnd(t.end_date, inclusive);
+    const endsInsideDay = !isDateOnly(t.end_date) && (endExcl.getHours() !== 0 || endExcl.getMinutes() !== 0);
+    const n = countWorkingDays(cal, parseISO(t.start_date), endsInsideDay ? addDays(endExcl, 1) : endExcl);
+    if (n > 0) return n;
+  }
+  if (typeof t.duration_days === 'number' && t.duration_days > 0) return Math.ceil(t.duration_days);
+  return 1;
+}
+
 function currentDates(t: Tarea, inclusive: boolean): Scheduled | null {
   if (!t.start_date) return null;
   const start = parseISO(t.start_date);
@@ -71,6 +89,17 @@ export function propagateTaskDates(
   options: PropagateOptions = {},
 ): PropagateResult {
   const inclusive = !!options.inclusiveEndDate;
+  const cal = options.calendar ?? null;
+  // Con calendario: el inicio cae en el primer hábil >= ancla, y el fin
+  // (exclusivo) es el día siguiente al último hábil, así la barra no se estira
+  // sobre el finde que la sigue.
+  const startFrom = (anchor: Date, lag: number): Date =>
+    cal ? addWorkingDays(cal, nextWorkingDate(cal, anchor), Math.round(lag)) : addDays(anchor, lag);
+  const endFromStart = (start: Date, dur: number): Date =>
+    cal ? addDays(addWorkingDays(cal, start, Math.max(1, dur) - 1), 1) : addDays(start, dur);
+  // FF/SF: se ancla el FIN y se retrocede la duración para obtener el inicio.
+  const startBeforeEnd = (anchor: Date, lag: number, dur: number): Date =>
+    cal ? addWorkingDays(cal, startFrom(anchor, lag), -Math.max(1, dur)) : addDays(anchor, lag - dur);
   // Fin que se devuelve: con la convención inclusiva, el último día incluido.
   const endToISO = (end: Date, t: Tarea): string =>
     inclusive && (!t.end_date || isDateOnly(t.end_date)) ? toISO(addDays(end, -1)) : toISO(end);
@@ -125,7 +154,7 @@ export function propagateTaskDates(
       const task = byId.get(tid);
       if (!task) { remaining.delete(tid); continue; }
 
-      const dur = durationOf(task, inclusive);
+      const dur = cal ? workingDurationOf(task, inclusive, cal) : durationOf(task, inclusive);
       const original = currentDates(task, inclusive);
 
       let newStart: Date | null = null;
@@ -144,13 +173,13 @@ export function propagateTaskDates(
           let candidate: Date | null = null;
           const lag = d.lag_days ?? 0;
           if (d.dependency_type === 'FS') {
-            candidate = addDays(predScheduled.end, lag);
+            candidate = startFrom(predScheduled.end, lag);
           } else if (d.dependency_type === 'SS') {
-            candidate = addDays(predScheduled.start, lag);
+            candidate = startFrom(predScheduled.start, lag);
           } else if (d.dependency_type === 'FF') {
-            candidate = addDays(predScheduled.end, lag - dur);
+            candidate = startBeforeEnd(predScheduled.end, lag, dur);
           } else if (d.dependency_type === 'SF') {
-            candidate = addDays(predScheduled.start, lag - dur);
+            candidate = startBeforeEnd(predScheduled.start, lag, dur);
           }
           if (candidate && (!earliest || candidate > earliest)) {
             earliest = candidate;
@@ -158,7 +187,7 @@ export function propagateTaskDates(
         }
         if (earliest) {
           newStart = earliest;
-          newEnd = addDays(earliest, dur);
+          newEnd = endFromStart(earliest, dur);
         } else if (original) {
           newStart = original.start;
           newEnd = original.end;

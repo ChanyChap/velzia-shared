@@ -299,3 +299,76 @@ export function offsetDaysToDateTime(
   const hours = offsetInWorkingDays * cal.hoursPerDay;
   return addWorkingHours(cal, projectStart, hours);
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Aritmética de DÍAS HÁBILES (mover barras y propagar a sucesoras)
+// ───────────────────────────────────────────────────────────────────
+//
+// PORQUÉ: Chany (9-oct-2026) decidió que mover una barra y propagar a las
+// sucesoras cuente días HÁBILES del calendario del Gantt, no naturales: una
+// tarea de 5 días que se mueve al jueves no puede quedarse en 5 días naturales
+// (jue→lun = 3 hábiles). Trabajan por FECHA, no por horas: la hora del día del
+// Date de entrada se conserva tal cual (como shiftDateKeepingTime en el Gantt).
+
+// Tope de días que se recorren buscando un laborable: un calendario sin ningún
+// día laborable no debe colgar la pestaña.
+const MAX_SCAN_DAYS = 3660;
+
+/**
+ * El propio día si es laborable; si no, el siguiente laborable. Conserva la
+ * hora del día. Si el calendario no tiene ningún laborable, devuelve la fecha
+ * tal cual.
+ */
+export function nextWorkingDate(cal: WorkingCalendar, date: Date): Date {
+  const cursor = new Date(date);
+  for (let i = 0; i < MAX_SCAN_DAYS; i++) {
+    if (isWorkingDate(cal, cursor)) return cursor;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return new Date(date);
+}
+
+/**
+ * Avanza (n > 0) o retrocede (n < 0) `n` días laborables desde `date`, saltando
+ * findes y festivos; solo cuentan los días en los que se ATERRIZA. Con n = 0
+ * devuelve la misma fecha. Conserva la hora del día. `n` se trunca a entero.
+ */
+export function addWorkingDays(cal: WorkingCalendar, date: Date, n: number): Date {
+  const cursor = new Date(date);
+  let remaining = Math.trunc(Math.abs(n));
+  const step = n < 0 ? -1 : 1;
+  let guard = 0;
+  while (remaining > 0 && guard < MAX_SCAN_DAYS) {
+    guard++;
+    cursor.setDate(cursor.getDate() + step);
+    if (isWorkingDate(cal, cursor)) {
+      remaining--;
+      guard = 0;
+    }
+  }
+  return remaining > 0 ? new Date(date) : cursor;
+}
+
+/**
+ * Días laborables en el intervalo semiabierto [from, to) por FECHA (la hora no
+ * cuenta). Si `to` es anterior a `from`, el resultado es negativo (los
+ * laborables de [to, from) con signo menos), de modo que
+ * addWorkingDays(nextWorkingDate(from), countWorkingDays(from, to)) vuelve al
+ * primer laborable >= to cuando `from` es laborable. Para contar un rango con
+ * el último día incluido, pasa `to` = día siguiente al último.
+ */
+export function countWorkingDays(cal: WorkingCalendar, from: Date, to: Date): number {
+  const a = new Date(from);
+  a.setHours(0, 0, 0, 0);
+  const b = new Date(to);
+  b.setHours(0, 0, 0, 0);
+  const sign = b < a ? -1 : 1;
+  const [lo, hi] = sign > 0 ? [a, b] : [b, a];
+  let count = 0;
+  const cursor = new Date(lo);
+  while (cursor < hi) {
+    if (isWorkingDate(cal, cursor)) count++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return sign * count;
+}
