@@ -450,3 +450,22 @@ export function dateAtColumnOffset(
   endDay.setMinutes(Math.round(w.startMin + endFrac * w.minutes));
   return endDay;
 }
+
+/**
+ * Marcas de HORA dentro de la columna de un día laborable: una por hora de su
+ * jornada (h = 0, 1, …), con la hora de reloj que rotula y la fracción de la
+ * columna en la que cae. La columna es la jornada de ESE día (workdayWindowOf),
+ * así que un viernes de 6 h reparte la columna en 6. La usan la cabecera
+ * (rótulos) y el cuerpo (sub-líneas) para que casen siempre: antes la cabecera
+ * repartía con la jornada de referencia y el cuerpo con la del día
+ * (VelziaCAD DT-20260930-CAL02 §6). Día sin jornada → [].
+ */
+export function hourMarksOfDay(cal: WorkingCalendar, date: Date): { hour: number; fraction: number }[] {
+  const dayHours = workingHoursOfDay(cal, date);
+  if (dayHours <= 0) return [];
+  const day = cal.schedule.get(date.getDay());
+  const startHour = day ? Math.floor(day.startMin / 60) : 8;
+  const marks: { hour: number; fraction: number }[] = [];
+  for (let h = 0; h < Math.ceil(dayHours); h++) marks.push({ hour: startHour + h, fraction: h / dayHours });
+  return marks;
+}

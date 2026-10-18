@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale';
 import { COLORS, HEADER_HEIGHT, HEADER_STYLE, PROJECT_START_COLOR } from './constants';
 import type { ViewMode } from './types';
 import type { GanttLayout } from './use-gantt-layout';
-import { type WorkingCalendar, isNonWorkingDate, workingHoursOfDay } from './working-calendar';
+import { type WorkingCalendar, hourMarksOfDay, isNonWorkingDate, workingHoursOfDay } from './working-calendar';
 
 // Umbral de zoom (px/día) para etiquetar las HORAS de la jornada bajo cada día.
 // Coincide con el umbral de timeline-body para que rejilla y cabecera casen.
@@ -58,21 +58,22 @@ function TimelineHeaderImpl({ layout, viewMode, projectStart, today, calendar, s
     !!calendar && viewMode === 'day' && pxPerDay >= HOUR_MARKS_MIN_PX_PER_DAY;
   const hourLabels: { x: number; label: string }[] = [];
   if (showHourLabels && calendar) {
-    const pxPerHour = pxPerDay / calendar.hoursPerDay;
     for (let i = 0; i < totalDays; i++) {
       const date = addDays(startDate, i);
-      const dayHours = workingHoursOfDay(calendar, date);
-      if (dayHours <= 0) continue;
-      const dayCfg = calendar.schedule.get(date.getDay());
-      const startHour = dayCfg ? Math.floor(dayCfg.startMin / 60) : 8;
+      // Mismas marcas que las sub-líneas del cuerpo (hourMarksOfDay): la columna
+      // es la jornada de ESE día, así que el «11» de un viernes 08–14 cae en la
+      // mitad, encima de su línea y de una barra que empieza a las 11:00. Con
+      // pxPerDay / hoursPerDay caía al 30 % (DT-20260930-CAL02 §6).
+      const marks = hourMarksOfDay(calendar, date);
+      if (marks.length === 0) continue;
       const dayX = xOf(date);
-      // Una etiqueta por hora de jornada (mostramos par/impar según ancho para
-      // no amontonar: si la hora no cabe en pxPerHour>=14, saltamos las impares).
-      const step = pxPerHour >= 14 ? 1 : 2;
-      for (let h = 0; h < Math.ceil(dayHours); h += step) {
+      // Par/impar según ancho para no amontonar: si la hora de ESE día no
+      // ocupa 14 px, se saltan las impares.
+      const step = pxPerDay / workingHoursOfDay(calendar, date) >= 14 ? 1 : 2;
+      for (let h = 0; h < marks.length; h += step) {
         hourLabels.push({
-          x: dayX + h * pxPerHour,
-          label: String(startHour + h).padStart(2, '0'),
+          x: dayX + marks[h].fraction * pxPerDay,
+          label: String(marks[h].hour).padStart(2, '0'),
         });
       }
     }

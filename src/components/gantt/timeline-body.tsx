@@ -14,7 +14,7 @@ import { ganttDragDelta, isSubDayRow } from './use-gantt-drag';
 import { TimelineHeader } from './timeline-header';
 import type { BaselineBar } from './use-baseline-render';
 import type { BarSide, DepDragState, DepDropTarget } from './use-dep-drag';
-import { type WorkingCalendar, workingHoursOfDay, isNonWorkingDate } from './working-calendar';
+import { type WorkingCalendar, hourMarksOfDay, isNonWorkingDate } from './working-calendar';
 
 // Umbral de zoom (px por día) a partir del cual dibujamos sub-líneas de cada
 // HORA dentro del día. Por debajo solo marcamos el inicio de jornada (línea
@@ -275,18 +275,17 @@ function TimelineBodyImpl({
     const result: { x: number; strong: boolean }[] = [];
     for (let i = 0; i < totalDays; i++) {
       const date = addDays(startDate, i);
-      const dayHours = workingHoursOfDay(calendar, date);
-      if (dayHours <= 0) continue;
+      // La columna del día es SU jornada (workdayWindowOf): un viernes de 6 h
+      // reparte la columna en 6, no en las 10 de la jornada de referencia
+      // (DT-20260930-CAL02 §6). Las marcas salen de hourMarksOfDay, el mismo
+      // helper que rotula la cabecera, para que líneas y rótulos casen.
+      const marks = hourMarksOfDay(calendar, date);
+      if (marks.length === 0) continue;
       const dayX = xOf(date);
       result.push({ x: dayX, strong: true });
-      // La columna del día es SU jornada (workdayWindowOf), así que cada hora
-      // mide pxPerDay / horas de ESE día: un viernes de 6 h reparte la columna
-      // en 6, no en las 10 de la jornada de referencia (DT-20260930-CAL02 §6).
-      // Así las sub-líneas caen donde el Gantt coloca las barras con hora.
-      const pxPerHour = pxPerDay / dayHours;
       if (showHours) {
-        for (let h = 1; h < Math.ceil(dayHours); h++) {
-          result.push({ x: dayX + h * pxPerHour, strong: false });
+        for (let h = 1; h < marks.length; h++) {
+          result.push({ x: dayX + marks[h].fraction * pxPerDay, strong: false });
         }
       }
     }
