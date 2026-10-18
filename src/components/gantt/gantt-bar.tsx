@@ -7,7 +7,7 @@ import { COLORS, RESIZE_HANDLE_WIDTH } from './constants';
 import { formatDurationShort } from './format-duration';
 import type { TaskRow } from './types';
 import type { BarSide } from './use-dep-drag';
-import type { WorkingCalendar } from './working-calendar';
+import { dateAtColumnOffset, type WorkingCalendar } from './working-calendar';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -256,18 +256,10 @@ function GanttBarImpl({
     if (row.inclusiveEndDay && row.plannedEndDate) {
       endStr = format(row.plannedEndDate, 'dd/MM/yyyy', { locale: es });
     } else if (row.startOffsetDays != null && row.widthDays == null) {
-      // Con hora, `days` son días de JORNADA: fin = inicio + days × jornada,
-      // repartido por días (lo que no cabe en la jornada pasa al día siguiente).
-      const wdMin = Math.max(1, workdayHours) * 60;
-      const startMin = row.startDate.getHours() * 60 + row.startDate.getMinutes();
-      const startFrac = Math.min(1, Math.max(0, (startMin - workdayStartHour * 60) / wdMin));
-      const endOffset = startFrac + Math.max(0, row.days);
-      const extraDays = endOffset > 0 ? Math.ceil(endOffset - 1e-9) - 1 : 0;
-      const endFrac = endOffset - extraDays;
-      const startDay = new Date(row.startDate);
-      startDay.setHours(0, 0, 0, 0);
-      const endDay = addDays(startDay, extraDays);
-      endDay.setMinutes(Math.round(workdayStartHour * 60 + endFrac * wdMin));
+      // Con hora, `days` son COLUMNAS de día: la parte entera, días; la
+      // fracción, la parte de la jornada de ESE día (con calendario, la del día
+      // en que acaba: un viernes 08–14 no se lee con la jornada de 10 h).
+      const endDay = dateAtColumnOffset(calendar, row.startDate, row.days, workdayStartHour, workdayHours);
       endStr = format(endDay, dateFmt, { locale: es });
     } else {
       // Fin real: el span en días-CALENDARIO (widthDays) cubre findes/festivos

@@ -372,3 +372,81 @@ export function countWorkingDays(cal: WorkingCalendar, from: Date, to: Date): nu
   }
   return sign * count;
 }
+
+// ───────────────────────────────────────────────────────────────────
+// Ventana de cada día en la REJILLA (columna del día = su jornada)
+// ───────────────────────────────────────────────────────────────────
+//
+// PORQUÉ (deuda DT-20260930-CAL02 §6 de VelziaCAD): con horario por día (L-J
+// 08–18, V 08–14) el Gantt colocaba todas las horas con UNA sola jornada
+// (workdayStartHour + workdayHours). Un viernes las 11:00 caían al 30 % de la
+// columna y las 14:00 (salida) al 60 %: el 40 % restante era una jornada que no
+// existe y la barra no cuadraba con las sub-líneas de hora ni con el motor de
+// VelziaCAD, que mide la fracción de cada día sobre SU ventana.
+//
+// Regla: con calendario, la columna de un día laborable representa SU jornada
+// (inicio → inicio + horas netas). Sin calendario, o en un día sin jornada
+// (finde, festivo, fila sin horas), se usa la jornada única de siempre: así
+// RefoTask/OnSite, que no pasan calendario, no se mueven ni un píxel.
+
+/** Jornada de un día en minutos: inicio desde medianoche y duración neta. */
+export interface WorkdayWindow {
+  startMin: number;
+  minutes: number;
+}
+
+export function workdayWindowOf(
+  cal: WorkingCalendar | null | undefined,
+  date: Date,
+  fallbackStartHour: number,
+  fallbackHours: number,
+): WorkdayWindow {
+  if (cal) {
+    const day = cal.schedule.get(date.getDay());
+    if (day && day.is_working_day && !isHoliday(cal, date)) {
+      // Horas NETAS (sin el descanso), igual que workingHoursOfDay y que
+      // addWorkingHours: la jornada es un bloque contiguo desde start_time.
+      const net = day.endMin - day.startMin - day.breakMin;
+      if (net > 0) return { startMin: day.startMin, minutes: net };
+    }
+  }
+  return { startMin: fallbackStartHour * 60, minutes: Math.max(1, fallbackHours) * 60 };
+}
+
+/** Fracción (0..1) de la columna del día en la que cae un instante con hora. */
+export function workdayFractionOf(
+  cal: WorkingCalendar | null | undefined,
+  d: Date,
+  fallbackStartHour: number,
+  fallbackHours: number,
+): number {
+  const w = workdayWindowOf(cal, d, fallbackStartHour, fallbackHours);
+  const minutesOfDay = d.getHours() * 60 + d.getMinutes();
+  return Math.min(1, Math.max(0, (minutesOfDay - w.startMin) / w.minutes));
+}
+
+/**
+ * Instante (fecha + hora) que corresponde a la posición `startFrac + spanDays`
+ * medida en COLUMNAS desde el día de `start`: la parte entera son días de
+ * calendario y la fracción, la parte de la jornada de ESE día. Es la inversa de
+ * workdayFractionOf; la usa el tooltip para enseñar el fin de una barra con hora.
+ */
+export function dateAtColumnOffset(
+  cal: WorkingCalendar | null | undefined,
+  start: Date,
+  spanDays: number,
+  fallbackStartHour: number,
+  fallbackHours: number,
+): Date {
+  const startFrac = workdayFractionOf(cal, start, fallbackStartHour, fallbackHours);
+  const endOffset = startFrac + Math.max(0, spanDays);
+  // Un entero exacto es la SALIDA del día anterior, no la entrada del siguiente.
+  const extraDays = endOffset > 0 ? Math.ceil(endOffset - 1e-9) - 1 : 0;
+  const endFrac = endOffset - extraDays;
+  const endDay = new Date(start);
+  endDay.setHours(0, 0, 0, 0);
+  endDay.setDate(endDay.getDate() + extraDays);
+  const w = workdayWindowOf(cal, endDay, fallbackStartHour, fallbackHours);
+  endDay.setMinutes(Math.round(w.startMin + endFrac * w.minutes));
+  return endDay;
+}

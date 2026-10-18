@@ -33,7 +33,7 @@ import { useZoomPersistence } from './use-zoom-persistence';
 import { computeCpm, type CpmActivity, type CpmDependency } from './cpm-engine';
 import { propagateTaskDates } from './propagate-task-dates';
 import { LEFT_PANEL_WIDTH, ANCHOR_DATE, COLORS, TODAY_DOT_DIAMETER, TODAY_DOT_STEP } from './constants';
-import { addWorkingDays, countWorkingDays, nextWorkingDate, type WorkingCalendar } from './working-calendar';
+import { addWorkingDays, countWorkingDays, nextWorkingDate, workdayFractionOf, workdayWindowOf, type WorkingCalendar } from './working-calendar';
 import { useResizableColumn } from './use-resizable-column';
 import { usePersistentState } from './use-persistent-state';
 import { formatDurationShort } from './format-duration';
@@ -199,11 +199,11 @@ function findReferenceDate(tareas: Tarea[]): Date {
 const hasTime = (iso: string | null | undefined): boolean => !!iso && iso.includes('T');
 
 // Fracción de jornada transcurrida (0..1) en un instante con hora. Es la misma
-// aritmética que coloca la X de las barras sub-día (startOffsetDays).
-function workdayFraction(d: Date, workdayStartHour: number, workdayHours: number): number {
-  const minutesOfDay = d.getHours() * 60 + d.getMinutes();
-  const dayMin = Math.max(1, workdayHours) * 60;
-  return Math.min(1, Math.max(0, (minutesOfDay - workdayStartHour * 60) / dayMin));
+// aritmética que coloca la X de las barras sub-día (startOffsetDays). Con
+// calendario, sobre la jornada de ESE día (un viernes 08–14 a las 11:00 es la
+// mitad de su columna); sin él, sobre la jornada única (ver workdayWindowOf).
+function workdayFraction(d: Date, workdayStartHour: number, workdayHours: number, calendar?: WorkingCalendar | null): number {
+  return workdayFractionOf(calendar, d, workdayStartHour, workdayHours);
 }
 
 // Días que ocupa la barra entre start_date y end_date.
@@ -218,12 +218,13 @@ function spanDaysBetween(
   inclusiveEndDate: boolean,
   workdayStartHour: number,
   workdayHours: number,
+  calendar?: WorkingCalendar | null,
 ): number {
   const start = parseISO(startISO);
   const end = parseISO(endISO);
   if (hasTime(startISO) || hasTime(endISO)) {
-    const fs = hasTime(startISO) ? workdayFraction(start, workdayStartHour, workdayHours) : 0;
-    const fe = hasTime(endISO) ? workdayFraction(end, workdayStartHour, workdayHours) : (inclusiveEndDate ? 1 : 0);
+    const fs = hasTime(startISO) ? workdayFraction(start, workdayStartHour, workdayHours, calendar) : 0;
+    const fe = hasTime(endISO) ? workdayFraction(end, workdayStartHour, workdayHours, calendar) : (inclusiveEndDate ? 1 : 0);
     return differenceInCalendarDays(end, start) + fe - fs;
   }
   if (inclusiveEndDate) return differenceInCalendarDays(end, start) + 1;
@@ -471,7 +472,7 @@ export function ScheduleGantt({
       // duration_days llega como string (NUMERIC) → Number().
       const durN = Number(t.duration_days);
       const rangeN = t.start_date && t.end_date
-        ? spanDaysBetween(t.start_date, t.end_date, inclusiveEndDate, workdayStartHour, workdayHours)
+        ? spanDaysBetween(t.start_date, t.end_date, inclusiveEndDate, workdayStartHour, workdayHours, calendar)
         : 0;
       const days = Math.max(0.5, rangeN > 0 ? rangeN : (Number.isFinite(durN) && durN > 0 ? durN : 0.5));
       // HITO solo por flag explícito; una tarea sub-día no es hito.
@@ -484,7 +485,7 @@ export function ScheduleGantt({
       lagDays: d.lag_days ?? 0,
     }));
     return computeCpm(acts, deps);
-  }, [tareas, dependencies, referenceDate, hasHierarchy, inclusiveEndDate, workdayStartHour, workdayHours]);
+  }, [tareas, dependencies, referenceDate, hasHierarchy, inclusiveEndDate, workdayStartHour, workdayHours, calendar]);
 
   // Construye las filas que ven TaskList y TimelineBody.
   // ===== Líneas base del PROYECTO (tabla project_baselines, mig 827) =====
@@ -544,14 +545,14 @@ export function ScheduleGantt({
           // ignoraba la hora → la barra salía más ancha y desplazada a la
           // izquierda de la tarea, en vez de justo debajo (Chany 26 jul).
           const rangeDays = t.end_date
-            ? spanDaysBetween(t.start_date, t.end_date, inclusiveEndDate, workdayStartHour, workdayHours)
+            ? spanDaysBetween(t.start_date, t.end_date, inclusiveEndDate, workdayStartHour, workdayHours, calendar)
             : 0;
           const durDays = Number(t.duration_days);
           const durValid = Number.isFinite(durDays) && durDays > 0;
           const days = rangeDays > 0 ? rangeDays : (durValid ? durDays : 1);
           let startOffsetDays: number | undefined;
           if (t.start_date.includes('T')) {
-            const frac = workdayFraction(start, workdayStartHour, workdayHours);
+            const frac = workdayFraction(start, workdayStartHour, workdayHours, calendar);
             startOffsetDays = differenceInCalendarDays(start, ANCHOR_DATE) + frac;
           }
           // HITO solo por flag explícito (baseline): una tarea sub-día no es hito.
@@ -566,7 +567,7 @@ export function ScheduleGantt({
         setBaselineBars(map);
       } catch { setBaselineBars(new Map()); }
     },
-    [port, workdayHours, workdayStartHour, inclusiveEndDate],
+    [port, workdayHours, workdayStartHour, inclusiveEndDate, calendar],
   );
 
   // Reorden OPTIMISTA: el nuevo sort_order se aplica en local al instante, sin
@@ -678,7 +679,7 @@ export function ScheduleGantt({
       const durDays = Number(t.duration_days);
       const durValid = Number.isFinite(durDays) && durDays > 0;
       const rangeDays = t.start_date && t.end_date
-        ? spanDaysBetween(t.start_date, t.end_date, inclusiveEndDate, workdayStartHour, workdayHours)
+        ? spanDaysBetween(t.start_date, t.end_date, inclusiveEndDate, workdayStartHour, workdayHours, calendar)
         : 0;
       const daysReal = rangeDays > 0 ? rangeDays : (durValid ? durDays : 1);
       // Fin inclusivo: el end_date sin hora (o, sin end_date, el que sale de la
@@ -730,7 +731,7 @@ export function ScheduleGantt({
       // Sin hora → undefined → posición por día (retrocompatible, RefoTask).
       let startOffsetDays: number | undefined;
       if (t.start_date && t.start_date.includes('T')) {
-        const frac = workdayFraction(start, workdayStartHour, workdayHours);
+        const frac = workdayFraction(start, workdayStartHour, workdayHours, calendar);
         startOffsetDays = differenceInCalendarDays(start, ANCHOR_DATE) + frac;
       }
 
@@ -813,7 +814,7 @@ export function ScheduleGantt({
       if (end > maxEnd) maxEnd = end;
     }
     return { rows: allRows, deps: gdepsBuilt, minStart, maxEnd };
-  }, [orderedTareas, estancias, dependencies, canEdit, referenceDate, cpm, today, inclusiveEndDate, workdayStartHour, workdayHours]);
+  }, [orderedTareas, estancias, dependencies, canEdit, referenceDate, cpm, today, inclusiveEndDate, workdayStartHour, workdayHours, calendar]);
 
   // Actividades retrasadas (para el KPI + modal). Conserva el orden del Gantt.
   const delayedRows = useMemo(
@@ -1102,8 +1103,11 @@ export function ScheduleGantt({
       // no cambia. Emite datetime; la app persiste fecha+hora.
       if (isSameDaySubDay(tarea, inclusiveEndDate)) {
         const s = parseISO(tarea.start_date);
-        const wdStartMin = workdayStartHour * 60;
-        const wdMin = Math.max(60, workdayHours * 60);
+        // La columna es la jornada de ESE día (workdayWindowOf): el ancho en
+        // columnas se pasa a minutos con su ventana, y el fin se topa en su salida.
+        const win = workdayWindowOf(calendar, s, workdayStartHour, workdayHours);
+        const wdStartMin = win.startMin;
+        const wdMin = Math.max(60, win.minutes);
         const curMin = tarea.start_date.includes('T') ? s.getHours() * 60 + s.getMinutes() : wdStartMin;
         const durMin = Math.max(15, Math.min(wdMin, Math.round(newDays * wdMin)));
         const dayStr = tarea.start_date.slice(0, 10);
@@ -1154,7 +1158,7 @@ export function ScheduleGantt({
         toast({ title: 'No se pudo guardar la duración', description: describeSupabaseError(err), variant: 'destructive' });
       }
     },
-    [tareas, onResizeTask, toast, port, inclusiveEndDate, workdayStartHour, workdayHours],
+    [tareas, onResizeTask, toast, port, inclusiveEndDate, workdayStartHour, workdayHours, calendar],
   );
 
   // Estado del diálogo "mover a fecha que no cuadra con dep+lag" (#18). Guarda
@@ -1198,9 +1202,13 @@ export function ScheduleGantt({
       // clamp al horario). Emite datetime con "T"; la app persiste fecha+hora.
       if (isSameDaySubDay(tarea, inclusiveEndDate)) {
         const s = parseISO(tarea.start_date);
-        const wdStartMin = workdayStartHour * 60;
-        const wdMin = Math.max(60, workdayHours * 60);
-        const durMin = Math.max(0, (Number(tarea.duration_days) || 0) * wdMin);
+        // El desplazamiento se mide en columnas del día → minutos de SU jornada,
+        // y se topa en su ventana. La duración sigue en días de referencia
+        // (workdayHours = «1 d»), que es lo que guarda duration_days.
+        const win = workdayWindowOf(calendar, s, workdayStartHour, workdayHours);
+        const wdStartMin = win.startMin;
+        const wdMin = Math.max(60, win.minutes);
+        const durMin = Math.min(wdMin, Math.max(0, (Number(tarea.duration_days) || 0) * Math.max(60, workdayHours * 60)));
         const curMin = s.getHours() * 60 + s.getMinutes();
         const shiftMin = Math.round(daysDelta * wdMin);
         const newStartMin = Math.min(Math.max(wdStartMin, curMin + shiftMin), wdStartMin + wdMin - durMin);

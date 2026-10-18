@@ -271,7 +271,6 @@ function TimelineBodyImpl({
   // findes/festivos no se dibuja nada (no hay horas laborables). Chany 30 may.
   const hourLines = useMemo(() => {
     if (!calendar || viewMode !== 'day') return [] as { x: number; strong: boolean }[];
-    const pxPerHour = pxPerDay / calendar.hoursPerDay;
     const showHours = pxPerDay >= HOUR_MARKS_MIN_PX_PER_DAY;
     const result: { x: number; strong: boolean }[] = [];
     for (let i = 0; i < totalDays; i++) {
@@ -280,6 +279,11 @@ function TimelineBodyImpl({
       if (dayHours <= 0) continue;
       const dayX = xOf(date);
       result.push({ x: dayX, strong: true });
+      // La columna del día es SU jornada (workdayWindowOf), así que cada hora
+      // mide pxPerDay / horas de ESE día: un viernes de 6 h reparte la columna
+      // en 6, no en las 10 de la jornada de referencia (DT-20260930-CAL02 §6).
+      // Así las sub-líneas caen donde el Gantt coloca las barras con hora.
+      const pxPerHour = pxPerDay / dayHours;
       if (showHours) {
         for (let h = 1; h < Math.ceil(dayHours); h++) {
           result.push({ x: dayX + h * pxPerHour, strong: false });
